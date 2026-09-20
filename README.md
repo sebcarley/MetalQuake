@@ -9,8 +9,8 @@ setting that puts the 1996 game back in one click.
 
 <!-- MEDIA: header GIF / video link go here before launch -->
 
-**[The field guide](https://GITHUB_USER.github.io/MetalQuake/GUIDE.html)** ·
-**[The manual](https://GITHUB_USER.github.io/MetalQuake/MANUAL.html)** ·
+**[The field guide](https://sebcarley.github.io/MetalQuake/GUIDE.html)** ·
+**[The manual](https://sebcarley.github.io/MetalQuake/MANUAL.html)** ·
 **[Every setting](SETTINGS.md)** · **[How the Metal renderer was built](METAL.md)**
 
 > Not affiliated with id Software or Bethesda. *Quake* is their trademark.
