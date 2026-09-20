@@ -98,3 +98,4 @@ __pycache__/
 
 # FTEQW source, kept beside the tree for reference only (2026-09-12 survey): never ours to commit
 /release/public/
+/release/media/

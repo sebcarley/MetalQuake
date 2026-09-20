@@ -7,7 +7,14 @@ native Metal renderer, hardware ray-traced lighting and shadows, volumetric fog 
 level's own lights shine through, HDR (EDR) output and MetalFX upscaling — and a **Stock**
 setting that puts the 1996 game back in one click.
 
-<!-- MEDIA: header GIF / video link go here before launch -->
+<p>
+  <img src="docs/media/thunderbolt.jpg" width="49%" alt="The thunderbolt lighting a room and its fog as it burns a Shambler">
+  <img src="docs/media/fog-hall.jpg" width="49%" alt="Volumetric fog in the hall of e1m2, lit by the level's own torches">
+</p>
+
+**Watch:** [the thunderbolt (11 s)](https://github.com/sebcarley/MetalQuake/releases/download/v0.1.1/MetalQuake-thunderbolt.mp4) ·
+[the fog hall (22 s)](https://github.com/sebcarley/MetalQuake/releases/download/v0.1.1/MetalQuake-fog-hall.mp4)
+<sub>— captured a little brighter than it is played, so it survives video compression.</sub>
 
 **[The field guide](https://sebcarley.github.io/MetalQuake/GUIDE.html)** ·
 **[The manual](https://sebcarley.github.io/MetalQuake/MANUAL.html)** ·
