@@ -436,7 +436,7 @@ TXT
 		PUBZIP="$(dirname "$OUT")/MetalQuake-$STAMP.zip"
 		rm -f "$PUBZIP"
 		# one top-level item (the MetalQuake folder), ditto so the signature survives
-		( cd "$(dirname "$OUT")" && ditto -c -k --keepParent MetalQuake "$(basename "$PUBZIP")" )
+		( cd "$(dirname "$OUT")" && ditto -c -k --norsrc --noextattr --keepParent MetalQuake "$(basename "$PUBZIP")" )
 		echo "== public zip: $(du -h "$PUBZIP" | cut -f1)  $PUBZIP"
 		shasum -a 256 "$PUBZIP" | tee "$PUBZIP.sha256"
 	fi
