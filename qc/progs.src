@@ -1,0 +1,41 @@
+../m5/progs.dat
+
+defs.qc
+subs.qc
+fight.qc
+ai.qc
+combat.qc
+items.qc
+m5burn.qc		// M5 burn: lightning sets things alight
+m5venom.qc		// M5 venom: the Scrag's spit carries an acid light
+m5feel.qc		// M5 weapon feel: kick, grenade bounces, nail tracers, axe sparks (SEPTEMBER2 G)
+weapons.qc
+m5ball.qc		// M5 ball lightning: the ninth weapon
+world.qc
+client.qc
+player.qc
+monsters.qc
+doors.qc
+buttons.qc
+triggers.qc
+plats.qc
+misc.qc
+
+ogre.qc
+demon.qc
+shambler.qc
+knight.qc
+soldier.qc
+wizard.qc
+dog.qc
+zombie.qc
+boss.qc
+
+tarbaby.qc		// registered
+hknight.qc		// registered
+fish.qc			// registered
+shalrath.qc		// registered
+enforcer.qc		// registered
+oldone.qc		// registered
+
+m5horde.qc		// M5 horde mode wave director

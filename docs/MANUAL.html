@@ -1,0 +1,1876 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MetalQuake — the working manual</title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  /* Quake is brown, not black. The ground carries a warm bias throughout. */
+  --paper:      #efe7db;
+  --panel:      #e6dccd;
+  --rule:       #cfc0aa;
+  --text:       #2b241d;
+  --text-dim:   #6a5c4c;
+
+  /* The accents are not decoration: orange is everything the ray tracer
+     does, blue is everything the fog and the water do, violet is the
+     lightning gun's plasma, red is the gameplay side. */
+  --fire:       #b4551a;
+  --murk:       #3d6b80;
+  --plasma:     #5c3f8e;
+  --blood:      #9c2418;
+
+  --mono: "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --body: Charter, "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --display: Copperplate, "Copperplate Gothic Bold", Herculanum, Optima, serif;
+
+  --measure: 46rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:    #14100e;
+    --panel:    #1d1815;
+    --rule:     #332b25;
+    --text:     #d3c9bc;
+    --text-dim: #8a7d6e;
+    --fire:     #e0762f;
+    --murk:     #7ea6ba;
+    --plasma:   #a892dc;
+    --blood:    #c8483a;
+  }
+}
+:root[data-theme="dark"] {
+  --paper:    #14100e;
+  --panel:    #1d1815;
+  --rule:     #332b25;
+  --text:     #d3c9bc;
+  --text-dim: #8a7d6e;
+  --fire:     #e0762f;
+  --murk:     #7ea6ba;
+  --plasma:   #a892dc;
+  --blood:    #c8483a;
+}
+:root[data-theme="light"] {
+  --paper:    #efe7db;
+  --panel:    #e6dccd;
+  --rule:     #cfc0aa;
+  --text:     #2b241d;
+  --text-dim: #6a5c4c;
+  --fire:     #b4551a;
+  --murk:     #3d6b80;
+  --plasma:   #5c3f8e;
+  --blood:    #9c2418;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  /* the masthead glow bleeds wide on purpose; clip it rather than letting it
+     give the whole page a sideways scrollbar */
+  overflow-x: clip;
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- layout ---------------------------------------------------------- */
+/* Mobile: one column, contents rail hidden. From 1100px — a 16:9 display —
+   the guide becomes a two-column spread: a sticky contents rail on the
+   left, the text at a book measure on the right, the masthead across both.
+   The measure widens a notch again on very wide glass. */
+.layout {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+}
+nav.toc { display: none; }
+
+@media (min-width: 1100px) {
+  .layout {
+    max-width: none;
+    width: min(92rem, 94vw);
+    display: grid;
+    grid-template-columns: 13rem minmax(0, var(--measure));
+    justify-content: center;
+    column-gap: 4.5rem;
+    padding: 3rem 2rem 7rem;
+  }
+  .masthead { grid-column: 1 / -1; }
+  nav.toc {
+    display: block;
+    position: sticky;
+    top: 2.5rem;
+    align-self: start;
+    padding-top: 0.4rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    line-height: 2.05;
+  }
+  nav.toc .toclabel {
+    color: var(--text-dim);
+    letter-spacing: 0.18em;
+    font-size: 0.66rem;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  nav.toc a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    border-left: 2px solid var(--rule);
+    padding-left: 0.75rem;
+  }
+  nav.toc a:hover { color: var(--text); }
+  nav.toc a.rt     { border-left-color: color-mix(in srgb, var(--fire) 55%, var(--rule)); }
+  nav.toc a.fog    { border-left-color: color-mix(in srgb, var(--murk) 55%, var(--rule)); }
+  nav.toc a.water  { border-left-color: color-mix(in srgb, var(--murk) 55%, var(--rule)); }
+  nav.toc a.plasma { border-left-color: color-mix(in srgb, var(--plasma) 55%, var(--rule)); }
+  nav.toc a.mods   { border-left-color: color-mix(in srgb, var(--blood) 55%, var(--rule)); }
+  main { grid-column: 2; min-width: 0; }
+}
+@media (min-width: 1500px) {
+  :root { --measure: 50rem; }
+  body { font-size: 18px; }
+  .layout { column-gap: 6rem; }
+}
+
+/* ---- masthead ------------------------------------------------------- */
+/* The one flourish: a torch-lit haze behind the title, which is the engine
+   describing itself — the torch, the murk beneath it, and now a violet
+   breath of plasma off to one side. Kept to a single element. */
+.masthead {
+  position: relative;
+  padding: 4rem 0 3rem;
+  isolation: isolate;
+  text-align: center;
+}
+.masthead::before {
+  content: "";
+  position: absolute;
+  inset: -35% -30% 15% -30%;
+  z-index: -1;
+  background:
+    radial-gradient(50% 55% at 50% 40%, color-mix(in srgb, var(--fire) 26%, transparent), transparent 72%),
+    radial-gradient(65% 60% at 48% 80%, color-mix(in srgb, var(--murk) 20%, transparent), transparent 76%),
+    radial-gradient(30% 40% at 79% 34%, color-mix(in srgb, var(--plasma) 14%, transparent), transparent 70%);
+  filter: blur(16px);
+  pointer-events: none;
+}
+
+h1 {
+  font-family: var(--display);
+  font-size: clamp(2.4rem, 6vw, 4.2rem);
+  letter-spacing: 0.06em;
+  line-height: 1.02;
+  margin: 0 0 1.1rem;
+  text-wrap: balance;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) h1 {
+    text-shadow: 0 0 34px color-mix(in srgb, var(--fire) 28%, transparent);
+  }
+}
+:root[data-theme="dark"] h1 {
+  text-shadow: 0 0 34px color-mix(in srgb, var(--fire) 28%, transparent);
+}
+.standfirst {
+  font-size: 1.14rem;
+  color: var(--text-dim);
+  margin: 0 auto;
+  max-width: 44rem;
+  text-wrap: pretty;
+}
+.colophon {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0 0 1.75rem;
+}
+.colophon.foot { margin: 1.6rem 0 0; }
+
+/* ---- sections ------------------------------------------------------- */
+/* The left rule states which subsystem you are reading about. It carries
+   real information: orange is the ray tracer, blue the fog and the water,
+   violet the lightning gun, red the mods. */
+section {
+  margin: 3.25rem 0 0;
+  padding-left: 1.15rem;
+  border-left: 2px solid var(--rule);
+  scroll-margin-top: 2.5rem;
+}
+section.rt     { border-left-color: var(--fire); }
+section.fog    { border-left-color: var(--murk); }
+section.water  { border-left-color: var(--murk); }
+section.plasma { border-left-color: var(--plasma); }
+section.mods   { border-left-color: var(--blood); }
+
+h2 {
+  font-family: var(--display);
+  font-size: 1.32rem;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.2rem;
+  text-wrap: balance;
+}
+.kicker {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: 0.55rem;
+}
+h3 {
+  font-family: var(--body);
+  font-weight: 700;
+  font-size: 1rem;
+  margin: 1.6rem 0 0.3rem;
+}
+p { margin: 0 0 0.9rem; text-wrap: pretty; }
+
+/* An epigraph opens every chapter: one line in the register, set off by an
+   asterism in the chapter's own colour. The paragraph that follows it is the
+   opener — a breath of the place before the manual begins. */
+.epigraph {
+  font-style: italic;
+  font-size: 1.04rem;
+  color: var(--text-dim);
+  max-width: 36rem;
+  margin: 0.4rem 0 1.4rem;
+  text-wrap: pretty;
+}
+.epigraph::before {
+  content: "⁂";
+  display: block;
+  font-style: normal;
+  font-size: 0.85rem;
+  letter-spacing: 0.4em;
+  color: var(--rule);
+  margin-bottom: 0.3rem;
+}
+section.rt     .epigraph::before { color: color-mix(in srgb, var(--fire) 65%, var(--rule)); }
+section.fog    .epigraph::before,
+section.water  .epigraph::before { color: color-mix(in srgb, var(--murk) 65%, var(--rule)); }
+section.plasma .epigraph::before { color: color-mix(in srgb, var(--plasma) 65%, var(--rule)); }
+section.mods   .epigraph::before { color: color-mix(in srgb, var(--blood) 65%, var(--rule)); }
+.opener { font-size: 1.06rem; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.83em;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.08em 0.34em;
+  white-space: nowrap;
+}
+pre {
+  font-family: var(--mono);
+  font-size: 0.83rem;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.7rem 0.9rem;
+  overflow-x: auto;
+  margin: 0.6rem 0 0.9rem;
+}
+pre code { background: none; border: none; padding: 0; white-space: pre; }
+
+dl { margin: 0.4rem 0 0; }
+dt {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--fire);
+  margin-top: 0.85rem;
+}
+.fog dt, .water dt { color: var(--murk); }
+.plasma dt { color: var(--plasma); }
+.mods dt   { color: var(--blood); }
+dd { margin: 0.1rem 0 0; }
+
+.note {
+  border-top: 1px solid var(--rule);
+  margin-top: 1.4rem;
+  padding-top: 0.8rem;
+  font-size: 0.92rem;
+  color: var(--text-dim);
+}
+
+/* "Where to look": the places in the game to go and stand. A small panel,
+   because the whole point of the guide is to send you back down. */
+.where {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.75rem 1rem 0.7rem;
+  margin: 1.3rem 0 0;
+  font-size: 0.92rem;
+}
+.where .kicker { margin-bottom: 0.25rem; }
+.where p { margin: 0; }
+
+/* ---- tables --------------------------------------------------------- */
+.scroll { overflow-x: auto; margin: 0.9rem 0 0; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+th, td {
+  text-align: right;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+th:first-child, td:first-child { text-align: left; }
+td:last-child { white-space: normal; text-align: left; min-width: 22rem; }
+thead th {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+tbody tr:last-child td { border-bottom: none; }
+
+footer {
+  margin-top: 4rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.86rem;
+  color: var(--text-dim);
+}
+a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 2px; }
+a:focus-visible, :focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
+</style>
+
+<div class="layout">
+
+<header class="masthead">
+  <p class="colophon">A native Metal engine · Apple Silicon · grown from DarkPlaces</p>
+  <h1>MetalQuake</h1>
+  <p class="standfirst">Quake, 1996, sunk into colder water. The light is traced ray by
+  ray and the shadows answer to it; the fog pools in the low rooms and keeps its own
+  counsel; the water bends what lies beneath it and goes dark at depth; between the
+  torches, the black is honestly black. The old game is intact beneath — rock-solid,
+  exactly as id built it — just further from the surface than you remember, and no longer
+  entirely convinced you are alone down there.</p>
+  <p class="colophon foot">The working manual · September 2026</p>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <span class="toclabel">Contents</span>
+  <a class="rt" href="#rt">Ray tracing</a>
+  <a class="fog" href="#fog">Volumetric fog</a>
+  <a class="water" href="#water">The water</a>
+  <a class="plasma" href="#lightning">The lightning gun</a>
+  <a class="mods" href="#mods">The mods</a>
+  <a href="#packs">Mission packs</a>
+  <a href="#sway">Idle sway</a>
+  <a href="#dark">Darkness</a>
+  <a href="#edr">Highlights</a>
+  <a href="#perf">Performance</a>
+  <a href="#replay">Replay</a>
+  <a href="#sound">Sound</a>
+  <a href="#start">Quick start</a>
+  <a href="#install">Another Mac</a>
+  <a href="#limits">Limits</a>
+</nav>
+
+<main>
+
+<p><strong>MetalQuake</strong> is a native Metal engine for Apple Silicon. It grew out of
+DarkPlaces and has long since become its own thing: the renderer is Metal, the maps' real
+lights are traced on the GPU's ray-tracing cores, and on top of the 1996 game sit four
+things — <strong>ray-traced light</strong>, <strong>fog</strong> that settles into rooms
+rather than hazing the screen, <strong>water</strong> that bends what lies beneath it, and
+a <strong>lightning gun</strong> with two faces — with a set of <strong>gameplay
+mods</strong> beside them.</p>
+
+<p>Everything answers to a console variable, and every variable is documented in
+<code>SETTINGS.md</code>. The menus carry the ones worth reaching for; this guide is the
+tour of what they do, why, and where in the game to go and stand to see them.</p>
+
+<section class="rt" id="rt">
+  <span class="kicker">I &middot; Light</span>
+  <h2>Ray tracing</h2>
+  <p class="epigraph">Every shadow in these halls belongs to something. Follow it back far
+  enough and you will find the flame — or whatever is standing between you and the
+  flame.</p>
+
+  <p class="opener">The torches in the Necropolis were burning long before you came down
+  the stairs, and for thirty years the walls were never asked what they showed. A ray
+  tracer runs inside the renderer now, and it asks. Every frame it traces the map's real
+  lights on the GPU's ray-tracing hardware and lays the answer over the scene: shadows that
+  move when the light moves, torches that genuinely light the stone near them, and a black
+  behind every pillar that is there because something is in the way.</p>
+
+  <p><code>rt_metal</code> is the master, and <strong>Options → RT Shadows (Metal)</strong>
+  is its page.</p>
+
+  <dl>
+    <dt>rt_metal_samples · _softness · _darkness</dt>
+    <dd>Soft shadows. More samples give smoother penumbrae; softness is how large an area
+    each light pretends to be; darkness is how black a fully shadowed surface goes.</dd>
+
+    <dt>rt_metal_walllight</dt>
+    <dd>The big one. Above 0, the ray tracer computes <em>all</em> the lighting rather than
+    layering shadows over Quake's baked lightmaps. Rooms gain real directionality
+    and every shadow belongs to a light you can find.</dd>
+
+    <dt>rt_metal_lightcap</dt>
+    <dd>On by default at 0.75. A ceiling on how bright any one <em>map</em> light may be
+    uploaded. Most Quake lights are 150–300; e1m2's water hall has three at 800, and
+    under wall lighting one of those pins every wall near it flat white — the overbright
+    corridor. At <strong>0.75</strong> those lights come down to a strong
+    torch's level while ordinary ones barely move; the far walls of that hall get their
+    brickwork back, though the hall stays bright — it is also simply full of lights, and
+    only the global <code>rt_metal_lmax</code> knee reaches that. 1 is gentler, 0 removes
+    the ceiling. It changes nothing on a map without such lights.</dd>
+
+    <dt>rt_metal_lmax</dt>
+    <dd>The knee, at 2.5. A surface beside its own light is lit five to seven times over,
+    and under HDR its texture detail blows past white for the upscaler to sharpen into
+    bright single pixels along a monster's edge or round a wall fixture. This rolls the
+    lighting off softly above the knee; <code>0</code> is the old unbounded look,
+    <code>2</code> a flatter one.</dd>
+
+    <dt>rt_metal_fog</dt>
+    <dd>Moves the entire fog calculation into the ray tracer, so the fog is lit per step
+    along the view ray. This is what produces god rays: light shafts with genuine occlusion
+    structure, because each sample fires a shadow ray at the light.</dd>
+
+    <dt>r_lavaboil · r_lavaflow · r_lavaglow · r_lavashimmer · rt_metal_lavalights</dt>
+    <dd>Lava boils, glows, lights the room above it, and warms the air around it. Since
+    <code>r_lavaflow</code> it also <em>flows</em> — the crust drifts across the sheet
+    instead of only churning on the spot, which is what stops a big lake reading as an
+    animated texture. <code>r_lavaflow_speed</code> sets the pace, and
+    <code>r_volumetric_mistlavacut</code> keeps the surface mist off it, since cold mist on
+    molten rock never looked right.
+    <br>And the air above it <em>shimmers</em> — <code>r_lavashimmer</code> refracts whatever
+    you can see <em>through</em> that rising heat, which is the only warning the game gives you
+    before you are standing in it. Think of a photograph of a bonfire: what bends is the
+    building behind the flames, not the flames. So it is the air between your eye and what you
+    are looking at that counts — a wall on the far side of a lava lake ripples, and so does
+    Chthon standing in one. <code>..._height</code> sets how far the lava heats the air around
+    it, <code>..._path</code> how much of that air you have to be looking through for the full
+    effect, and <code>..._dist</code> how far away a surface can be and still ripple.</dd>
+
+    <dt>r_teleportswirl · r_teleportswirl_pivot · r_teleportswirl_churn</dt>
+    <dd>Teleporter starfields boil under the same noise the water churns to. They used to
+    <em>rotate</em>, and about a point near the map's origin rather than about the pad — so
+    how fast a starfield moved depended on where in the level the teleporter happened to be
+    built. On the start map alone the three skill pads ran at 121, 271 and 439 pixels a
+    second, and across a whole map the spread was over tenfold; it also swamped the churn
+    about thirty to one, which is why you could see the starfield was distorted but never saw
+    it change. The rotation is off (<code>_pivot 2</code>) and the churn does the work at
+    eight times its old rate: the field visibly boils, at the same pace on every pad in every
+    map. <code>_pivot 0</code> with <code>_churn 1</code> puts the old behaviour back exactly;
+    <code>1</code> keeps a slow rotation but shows a faint seam where texture tiles meet.</dd>
+
+    <dt>r_redglow</dt>
+    <dd>Quake marks danger in saturated red — the bands on an Ogre's grenades, the buttons,
+    the health-box cross — and almost none of it was ever allowed to glow. This makes red
+    burn: a red enough texel emits its own colour, judged texel by texel, so brickwork,
+    brown shadow and dried blood stay as dead as they should be.</dd>
+
+    <dt>rt_metal_sameframe</dt>
+    <dd>Normally the ray tracer runs a frame ahead of what you see, and its result is warped
+    to match your current view — nearly perfect, but close edges and monsters can show a
+    faint one-frame fringe when you move. This traces and shows the <em>same</em> frame
+    instead: no fringe, at a cost that ranges from nothing when the GPU is already busy to
+    roughly an eighth of your frame rate. On by default. There is no menu row for it —
+    <code>rt_metal_sameframe 0</code> at the console turns it off.</dd>
+  </dl>
+
+  <p class="note">Torch flames are lifted out of the shadow-caster set into their own
+  emissive pass. Without that they blocked their own light and traced to black — which is
+  what a torch model sitting exactly on its light source will do.</p>
+
+  <p><strong>In the fog, every light casts a shadow.</strong> Each fog sample sends its one
+  shadow ray to a light chosen in proportion to what that light actually delivers there, so
+  over a handful of frames every light — torches included — shadows correctly, fog gains
+  real shape around its lights, and god rays carry genuine per-light structure. Torch glow
+  no longer spills through walls into fog it cannot see. That per-light structure is the
+  fog's &ldquo;detail and clumpiness&rdquo;; without it the flat fill reads as a haze, and
+  it was sent straight back the one afternoon it was tried without. Every tier from Fast up
+  carries the pick; only Stock and Superfast leave it out. <code>rt_metal_lightsample 0</code>
+  restores the old dominant-light-only fog exactly. <strong>On surfaces</strong> (walls,
+  monsters) the brightest light at each point still takes the shadow ray and the rest are
+  added unshadowed — the stochastic version of that (<code>rt_metal_lightsample 2</code>)
+  sparkled in motion and stays an A/B curiosity only.</p>
+
+  <p class="note"><strong>Rooms are lit by bounce light.</strong> One-bounce global
+  illumination (<strong>Bounce Lighting</strong> on the RT Shadows page,
+  <code>rt_metal_gi</code>, on by default) fires a bounce ray from every surface the
+  ray tracer shades and gathers the real lights at the point it lands, so torch glow
+  bleeds into shadowed corners and a room reads <em>lit</em> rather than painted. It
+  needs wall lighting above 0 and costs a little under a millisecond of GPU — a few
+  frames per second at the Best tier, rather more at Good, so <strong>Best and Ultimate have
+  it on and Superfast, Fast, Good and Better leave it off</strong> (Better lost it in the
+  19 September retier, where it became the Better&nbsp;&rarr;&nbsp;Best rung and measured
+  &times;1.10 on demo48). <code>0</code>
+  restores the direct-light-only look exactly. Lava and torch flames bounce their own glow
+  too (<code>rt_metal_gi_emissive</code>, on at 0.65) — lava throws orange onto the
+  walls and ceilings above it — and the bounce carries each surface's <em>own</em>
+  colour (<code>rt_metal_gi_albedo_tex</code>, on), so a brick corridor bleeds
+  brown into its corners and a slime hall bleeds green. <code>0</code> on either
+  switches just that part off.</p>
+
+  <p class="note">The same principle covers every glowing surface: a lamp face, a
+  glowing panel or rune emits its own light, so wall lighting must not shade it. Its
+  glow is re-added at authored brightness after the ray-traced lighting is applied
+  (<code>rt_metal_glowpass</code>), which is why a recessed slot lamp no longer renders
+  extinguished when its lighting term happens to be in shadow. <code>0</code> restores
+  the old behaviour exactly.</p>
+
+  <p class="note"><strong>Your weapon is lit by the room.</strong> Wall lighting
+  renders the world unlit and paints the ray-traced light back over it — but that repaint
+  is deliberately masked off the weapon in your hands (otherwise it would be shaded by
+  whatever wall happens to be behind it), so for a while the gun sat at one flat brightness
+  in every room, and the muzzle flash lit everything except the hands holding it. It takes
+  its light from the same lights the ray tracer uses now (<strong>Weapon Lighting</strong>
+  on the RT Shadows page): it dims as you walk into the dark, warms beside a torch,
+  flickers with it, catches your own lamp, and flares when you fire. A few of the brightest
+  lights are properly occlusion-tested, so stepping behind a pillar dims it rather than
+  leaving it lit through the stone. Measured on E1M3: the gun used to read the same
+  brightness in a lit hall and a dark corner; it now spans more than six to one between
+  them. <code>0</code> restores the old flat weapon exactly.</p>
+
+  <p class="note">Sky counts as <em>open sky</em> to the ray tracer rather than as
+  a wall (<code>rt_metal_skyopen</code>), so wall lighting no longer darkens patches of a
+  skylight into black boxes, and god-ray beams genuinely cross sky windows. The fog keeps
+  a cap over sky too (<code>r_volumetric_skyfog</code>, default 0.8): a fogged skylight
+  reads as sky seen through fog, never fog instead of sky. Both at <code>0</code>/<code>1</code>
+  restore the old behaviour exactly.</p>
+
+  <p class="note"><strong>The sun is an option, not a default</strong> — your word: it is
+  well executed and subtle, and it does not fit lots of maps. <code>exec sun_on.cfg</code>
+  gives the ray tracer a sun. Where a map declares one (Arcane Dimensions does: its start
+  hub, the Sepulcher and its first level) every surface casts a ray toward it and is lit
+  wherever that ray reaches open sky, so courtyards and rooftops take real sunlight with
+  real shadows; the fog beneath takes none yet. Stock Quake declares no sun;
+  <code>exec sun_e1m1.cfg</code> sets one by hand over e1m1's outdoor start, and
+  <code>rt_metal_sun_mangle</code> / <code>rt_metal_sun_light</code> are the knobs for any
+  other map. It only shows under Full Wall Lighting, where the map's baked sun is thrown
+  away with the rest of the lightmap. <code>exec sun_off.cfg</code> reverts.</p>
+
+  <div class="where">
+    <span class="kicker">Where to look</span>
+    <p>The first corridor of e1m3, the Necropolis, past the three zombies in their vault:
+    the torches on the walls light the stone near them and nothing else. Then e1m7, the House
+    of Chthon — stand at the top of the stair and watch the lava throw orange onto the
+    ceiling, and the far wall ripple through the heat.</p>
+  </div>
+</section>
+
+<section class="fog" id="fog">
+  <span class="kicker">II &middot; The murk</span>
+  <h2>Volumetric fog</h2>
+  <p class="epigraph">It lies where the floor is lowest and the air is stillest, and it
+  remembers the shape of the room better than you do.</p>
+
+  <p class="opener">Not screen haze. A map of the level is baked as the level loads —
+  where the floor is, where the water is, where the corners are — and the fog settles by
+  it: into the low rooms, along the waterline, into the crevices, as if it had been
+  draining down there for years and you were the first thing to disturb it.</p>
+
+  <p><code>r_volumetric</code> is the master; the rest is on <strong>Options → Volumetric
+  Fog</strong>.</p>
+
+  <dl>
+    <dt>r_volumetric_density · _corner</dt>
+    <dd>Density is the <em>open air</em> value and wants to be low — corner gathering
+    multiplies it up several times in corners and crevices, which is where fog belongs.</dd>
+
+    <dt>r_volumetric_ambient</dt>
+    <dd>On by default: the fog is lit by the level rather than by itself. A dark room
+    gives dark fog, a torch-lit doorway throws a visible pool into it, and the ground
+    mist stops glowing on its own. <code>_ambientgain</code> (1) is the strength if the fog
+    reads too dark or too bright against its room; 0 restores the old self-lit murk.
+    The light grid fills the cells inside walls with the average of the open air beside
+    them (<code>_ambientdilate</code> 1; 0 is the older brightest-neighbour fill, under
+    which most of the air read fully lit) on 64-unit cells (<code>r_volumetric_irrcell</code>).
+    With the ray-traced fog on, most of what the fog shows is the light the lamps and
+    torches scatter into it; this term sets how dark the fog's own body is beneath that.</dd>
+
+    <dt>r_volumetric_noise2</dt>
+    <dd>On by default: the fog's structure is baked from folded, warped clumps rather
+    than blobs on a grid, and every map gets its own pattern. 0 restores the classic
+    noise exactly.</dd>
+
+    <dt>r_volumetric_swirl</dt>
+    <dd>On by default: the fog rolls and shears as it drifts — banks curl instead of
+    sliding past as one sheet, and the top of the ground mist billows where it meets the
+    clear air, like cloud tops. The value is how far the fog is stirred, in world units;
+    0 restores the straight drift exactly.</dd>
+
+    <dt>r_volumetric_ground · _groundheight · _groundcolour</dt>
+    <dd>A shallow dry-ice layer hugging each room's floor, with its own billow and drift.
+    Set the colour to near-black for something inky rather than misty.</dd>
+
+    <dt>rt_metal_fog_froxel</dt>
+    <dd>On by default, and on every tier from Good up: the fog is kept in three dimensions
+    rather than as a flat picture. The fog kernel marches fixed depth slices and each slice
+    remembers its own history at its own distance, so the smoothing can run ten frames deep
+    without trailing the scene when you strafe — the trailing a flat history cannot avoid,
+    which is why deeper flat histories were tried and parked. Your word on first sight:
+    &ldquo;froxel looks amazing, keep that.&rdquo; Lit fog is calmer walking and turning; a
+    light flick or a door settles within a third of a second. Fast keeps the old flat history
+    on its small fog buffer until a bench prices the volume there.
+    <code>exec froxel_off.cfg</code> is the flat history for A/B; <code>froxel24.cfg</code>
+    is a cheaper 24-slice arm that reads a touch brighter than the true fog, and
+    <code>froxel095.cfg</code> a deeper history.</dd>
+
+    <dt>r_volumetric_water · _waterdensity</dt>
+    <dd>Thickens and tints the murk inside water, slime and lava, each with its own colour
+    and its own density. Set air density to 0 and this alone gives you clear air with murky
+    pools. The water has its own chapter below, and the murk inside it is most of that
+    chapter.</dd>
+
+    <dt>r_volumetric_particles</dt>
+    <dd>Fades blood, gibs, smoke and explosions into the fog by distance. Without it they
+    read bright and clear through fog thick enough to hide the wall behind them, because the
+    fog is drawn before they are. The fade works by thinning the particle rather than
+    recolouring it, so a dark smoke puff at the far end of a foggy hall is shrouded by the
+    fog exactly as the wall is, instead of sitting black in front of it;
+    <code>r_volumetric_particles_alpha 0</code> is the old recolouring.</dd>
+
+    <dt>cl_particles_lighting</dt>
+    <dd>Off by default. Every particle Quake has ever drawn was unlit — smoke over a torch
+    and smoke in a pitch-black corridor were the same grey. Set this to <strong>2</strong>
+    and smoke, dust and the like take the room's light: they read from the same baked
+    lighting grid the fog reads, so they sit in the fog as if they belonged to the same
+    air, and a muzzle flash, a rocket's glow or the handlamp lights them as it passes.
+    1 is the engine's own exact per-particle lookup with a shadow test per light, which
+    costs about four times as much and shows only where a wall is between a flash and its
+    smoke. <code>cl_particles_lighting_gain</code> is the brightness knob if the smoke
+    reads too dark or too bright against the walls.</dd>
+
+    <dt>cl_particles_texsize</dt>
+    <dd>256 by default since Seb's eye passed the round, or 64 for the old atlas. Every particle the engine draws — sparks, embers, smoke puffs,
+    the muzzle flash, the shell casing, a drop of blood — is a cell of one generated atlas,
+    and that atlas has been 64 pixels a cell since 2001, so a spark magnified across a hundred
+    pixels of the screen is a gaussian smear whatever shape it was meant to be. At 256 the
+    atlas is 2048 pixels square (16 MB) and every cell is authored sixteen times finer: the
+    flash keeps its tongues, a streak keeps its thread, an ember keeps its rim, and the smoke
+    puffs carry two more octaves of detail for free. It regenerates the moment you set it;
+    no restart. At 64 the font is the old one to the byte on every cell that existed.
+    <code>exec cells256.cfg</code> / <code>cells64.cfg</code>.</dd>
+
+    <dt>cl_particles_soft</dt>
+    <dd>24 by default, a distance in world units; 0 is the old hard edge. Every particle is a
+    flat square facing you, and where one cuts through a wall or the floor the engine has
+    always drawn a hard straight line across it — a smoke puff sliced by a doorway, a fireball
+    half inside the wall it hit, dust that ends in a razor edge on the flagstones. With this
+    set, each particle fades out over that many units as it approaches the surface behind it,
+    so smoke wraps a corner and fire sits in a wall rather than being cut by it. It reads the
+    scene's own depth, which the fog, the HDR path and the upscaler already publish; the muzzle
+    flash over your gun is exempt. <code>exec soft_on.cfg</code> / <code>soft_off.cfg</code>.</dd>
+
+    <dt>cl_particles_refract</dt>
+    <dd>12 by default, a strength in pixels; 0 draws the old bright ring alone. The explosion's shockwave
+    ring, and the ball's, are drawn today as a bright expanding ring. With this set, a second
+    ring travels with each that shows nothing of itself: every point on it is the scene behind
+    it, fetched a little further out from the centre, so the wall and the floor and the fog
+    behind the wave visibly bend outward for the fifth of a second the wave takes to pass. It
+    reads the same copy of the frame the water refracts, taken only on a frame with a wave in
+    it. <code>exec refract_on.cfg</code> / <code>refract_off.cfg</code>.</dd>
+
+    <dt>r_skylightning</dt>
+    <dd>On by default; 1 is a bright storm, 0 no weather at all. On a map with open sky, every so often
+    (<code>r_skylightning_period</code> seconds on average, 60) the sky lights everything
+    under it with a cold flash from a random high angle, with real shadows, for a few frames
+    (<code>r_skylightning_hold</code>, 0.05 s), flashes again a beat later, and one to four
+    seconds after the thunder rolls in from that side of the sky through the room's reverb.
+    The air lights with it: <code>r_skylightning_fog</code> (0.5) is how much of the flash
+    reaches the fog, carried by one light pushed up the flash's own direction on the
+    thunderbolt's own per-light fog weight. The fog kernel shadow-tests it, so a sealed room
+    stays dark while the air under open sky flashes. Turn it down first if your murk is pale
+    and your gamma bright; 0 is the flash as it first shipped, surfaces only.
+    It needs the ray tracer's wall lighting, as the sun does. <code>exec skylightning_on.cfg</code>
+    / <code>skylightning_off.cfg</code>, with <code>skylightning_fog1.cfg</code> and
+    <code>skylightning_nofog.cfg</code> either side of it.</dd>
+
+    <dt>r_caustics</dt>
+    <dd>0.6 by default; 0 is still water and dead stone. The floors and walls of pools take a moving
+    pattern of light cells, the way sunlight through water does, seen through the surface
+    from above or from under it. It reads the same map of the liquids the fog uses, so it
+    needs the liquid fade and the lava boil left at their defaults; <code>r_caustics_scale</code>
+    sizes the cells and <code>r_caustics_speed</code> paces them. <code>exec caustics_on.cfg</code>
+    / <code>caustics_off.cfg</code>.</dd>
+
+    <dt>rt_metal_shadowlights</dt>
+    <dd>How many of a pixel's brightest lights get a shadow test. 3 by default; 1 is the old
+    behaviour. Until now the ray tracer shadow-tested exactly ONE light per pixel — the
+    brightest one there — and every other light in range was added with no occlusion test at
+    all. A light in the next room, inside a ceiling recess or behind a pillar therefore
+    painted its full circular pool straight through the wall, which is what a clean round
+    lit patch in an odd place always was. At 2 and above the next brightest lights are
+    shadow-tested too, one after another, with no randomness and nothing to settle over
+    time. The second light costs about a tenth of a millisecond on the ray-tracing stage
+    (roughly one percent of a frame) and the third and fourth are free, because a batch of
+    pixels has already paid for the first. <code>rt_metal_shadowlights_rays</code> is how
+    many rays each of those extra lights spends. <code>exec spotfix_off.cfg</code> is the
+    old behaviour, <code>spotfix_on.cfg</code> the default and <code>spotfix_max.cfg</code>
+    four lights at four rays.</dd>
+
+    <dt>m5_powerupglow</dt>
+    <dd>On by default; 0 is 1996's. A player holding the Quad or the Pentagram has carried a
+    plain white light since the original game, and under full wall lighting that white light
+    is bright enough to flatten against the ceiling of the tone curve and end in a hard rim —
+    a spotlight rather than an aura. With this on the Quad glows <em>blue</em>, the Pentagram
+    <em>red</em> and both together magenta, over twice the distance at less than the
+    brightness, so the light falls away gradually and nothing clips.
+    <code>m5_powerupglow_radius</code> is how far it reaches; the value itself is the
+    strength, so 0.5 is half of it. <code>exec quadglow_on.cfg</code> /
+    <code>quadglow_off.cfg</code> / <code>quadglow_soft.cfg</code>.</dd>
+
+    <dt>rt_metal_contact</dt>
+    <dd>On by default; 1 is the full effect, 0 the old even softness. Every ray-traced shadow today is as soft as
+    <code>rt_metal_softness</code> says, whether the thing casting it stands on the floor or
+    hangs from the ceiling. With this on, one extra ray per pixel finds how far the blocker is,
+    and the shadow sharpens as the blocker approaches the surface it falls on — a monster's
+    feet crisp on the flagstones, a pillar's shadow hard at its base and soft at its tip. It
+    costs about a fifth of a millisecond on the ray-tracing stage at Best (some two percent of
+    the frame), which is why it is a switch and not a tier setting.
+    <code>exec contact_on.cfg</code> / <code>contact_off.cfg</code>.</dd>
+
+    <dt>rt_metal_fog_liquidlight</dt>
+    <dd>On by default; a fraction, 1 is the full effect and 0 the old blind water. The ray-traced fog already works out,
+    step by step, how much of each light scatters through the murk and where the shafts fall,
+    and under water it discards all of it, on purpose, so the underwater picture is the water's
+    own colour and thickness alone. With this set, that light comes through: shafts down into
+    a pool from the torches above it, the murk under water lit where a light reaches it, on
+    top of the water's own colour. The water's density and colour are unchanged.
+    <code>exec fog_liquidlight_on.cfg</code> / <code>_half.cfg</code> / <code>_off.cfg</code>.</dd>
+
+    <dt>rt_metal_gi_ao</dt>
+    <dd>On by default; 1 is the full effect, 0.5 half, 0 the old flat fill. The bounce ray that carries the
+    room's own light into its corners already knows how far it went before it hit
+    something, and a short distance is a corner, the foot of a wall, the underside of a
+    ledge. With this set, the flat ambient fill — the little light the ray tracer adds
+    everywhere so that nothing is pure black — darkens in exactly those places, by this
+    fraction, over <code>rt_metal_gi_ao_dist</code> units (64). The direct light and its
+    shadows are untouched. It costs nothing measurable where bounce lighting already runs
+    (Good and above) and does nothing where it does not. <code>exec gi_ao_on.cfg</code> /
+    <code>gi_ao_half.cfg</code> / <code>gi_ao_off.cfg</code>.</dd>
+
+    <dt>cl_particles_scorchglow</dt>
+    <dd>On by default. The mark a ball lightning leaves where it earths on a wall, and
+    where a grounding arc lands, and the mark of an axe blow on stone, glow orange at the
+    moment of the strike and cool to nothing over about three seconds, lying flat on the
+    surface over the dark scorch. Rockets do not take it: their explosion carries no surface
+    to lie the glow on. <code>exec scorchglow_on.cfg</code> / <code>scorchglow_off.cfg</code>.</dd>
+
+    <dt>cl_particles_blood_droplet</dt>
+    <dd>On by default. The blood in the air is drawn as single hard-edged drops, each at
+    its own angle, instead of the eight random splatter cells Quake has used since 2001, which
+    read as soft red smudges at any size. The blood on the walls is unchanged.
+    <code>exec droplet_on.cfg</code> / <code>droplet_off.cfg</code>.</dd>
+  </dl>
+
+  <p class="note"><strong>The atlas cells, for anyone editing <code>m5/effectinfo.txt</code>.</strong>
+  Cells 34 to 40 are the fork's own: the shell casing, the dust disc, the shockwave ring, the
+  muzzle flash, the spark streak (38), the ember (39) and the blood droplet (40). The
+  explosion's fast sparks, the ball's sparks and the axe's sparks use the streak; the
+  explosion's slow bouncing embers and the axe's falling embers use the ember; the blob is
+  cell 63, and <code>tex 63 63</code> on any layer puts it back.</p>
+
+  <p class="note"><strong>The fog's grain, and what keeps it down.</strong> Each fog
+  sample shadow-tests one light, so a sample is either lit or black, and the raw fog buffer
+  is covered in a grain a few fog texels across. Three things hold it: the sampling jitter
+  is spatiotemporal blue noise (<code>rt_metal_bluenoise</code>, on), so the grain reads as
+  featureless and each pixel's sequence over frames cancels rather than piles up; the light
+  test always includes the brightest light so no sample can go fully black
+  (<code>rt_metal_lightsample_hybrid 3</code>, the single-pass form — on every tier that
+  runs the pick, since your eye passed <code>exec a5_both.cfg</code>, with
+  the fog's shadow cast every fourth step); and a depth-aware 3&times;3 filter runs over the
+  fog at its own resolution before it is magnified (<code>rt_metal_fog_filter 1</code>,
+  every tier). If a fine fizz still shows parked in a lit bank, <code>exec despeckle.cfg</code>
+  runs the filter twice with the second pass spread wider (<code>rt_metal_fog_filter 4</code>,
+  one extra pass) and the two-ray form of the hybrid; <code>exec despeckle_off.cfg</code>
+  restores the shipped picture. A deeper <em>flat</em> history is deliberately not part of
+  it — measured against the true fog, any flat history trails the scene when you strafe —
+  which is what the 3D fog volume above is for.</p>
+
+  <p class="note">Fog met a wall's silhouette against sky, or a pillar against the far
+  wall, with a staircase of steps at every tier once. That was the fog buffer's own pitch
+  showing through its magnification, and the fog is magnified <strong>depth-aware</strong>
+  now (<code>rt_metal_fog_upsample</code>, on by default): at every silhouette each pixel is
+  rebuilt from the fog that was marched to <em>its</em> surface rather than blended with the
+  fog behind it. The interior of every surface is untouched. <code>0</code> restores the
+  plain magnification exactly, for A/B.</p>
+
+  <p class="note">Stuck? <code>r_volumetric_probe</code> prints what the fog actually sees
+  where you are standing — liquid or not, height above the floor, resulting density, and a
+  vertical profile. It also prints your coordinates, which makes it the <code>viewpos</code>
+  this engine never had.</p>
+
+  <div class="where">
+    <span class="kicker">Where to look</span>
+    <p>The great hall of e1m2, Castle of the Damned, walking forward through the lit fog
+    with the torches either side — this is where the light pick and the 3D volume earn their
+    keep. Then the lakeside of e1m4, the Grisly Grotto: a cave mouth opening onto water, the
+    mist lying along the waterline, and the torch-lit shrine on the far bank reading dimly
+    <em>through</em> it rather than being erased by it. That view is the reference the whole
+    fog was tuned against.</p>
+  </div>
+</section>
+
+<section class="water" id="water">
+  <span class="kicker">III &middot; The water</span>
+  <h2>The water</h2>
+  <p class="epigraph">Stand on the bank and look down. The floor of the pool is there,
+  further off than you thought, and the light on it is not the light you brought.</p>
+
+  <p class="opener">Quake's water was a sheet. It scrolled, it had a colour, and it hid
+  whatever lay beneath it — on the stock maps the engine never even drew the pool floor,
+  because the map's own visibility data never let the air see below the surface. It is water
+  now. It bends what lies beneath it, it ripples at the pace of real water, the murk thickens
+  inside it, and it goes dark at depth the way a lake does: a shallow pool shows you its
+  stones, a deep one shows you nothing, and you are not sure which kind you are looking at
+  until you are in it.</p>
+
+  <p>Two switches sit under everything here. <strong>Force Water Alpha</strong>
+  (<code>r_wateralpha_force</code>, on the Effects and Particles page) makes see-through water
+  real on the stock maps at all — the engine silently ignores <em>Water Alpha</em> there
+  otherwise, because the 1996 map data fails its visibility test — and <em>Water Alpha</em>
+  below 1 (yours is 0.7) makes the surface clear. Everything below wants both.</p>
+
+  <dl>
+    <dt>r_watersurface</dt>
+    <dd>On by default. The surface <strong>refracts what lies beneath it</strong>, the way
+    FTE's water does — measured against FTE running on this Mac, and remade step for step
+    from its shader. Two things make it water rather than a knob. <strong>The pool floor is
+    drawn</strong>: the visibility of the leaf just below each water surface is merged into
+    the view's, once per pool, so the floor arrives in the frame lit by the ray tracer and
+    fogged by the murk like any floor, and the refraction has something to bend. And
+    <strong>the ripple is read off the water texture's own 64&times;64 level</strong>, two
+    layers of it magnified five times and scrolling across each other so that a feature
+    crosses its own width about once a second — the rapid ripple — which means a hi-res
+    replacement pack never changes it, exactly as FTE derives its water from the palette
+    texture. The surface texture wobbles with the classic Quake warp on top. Looking straight
+    down, the water is clear; as your view flattens toward the far bank the texture takes
+    over, by a Fresnel on the rippled normal, so the surface sparkles ripple by ripple. It
+    is all screen space — one copy of the frame per view with water in it, no second scene
+    render — and it costs nothing at all on a frame with no clear water in view.
+    <br>The knobs are FTE's numbers: <code>_distort</code> 0.1 (&ldquo;fairly gentle&rdquo;;
+    0.2 is big waves), <code>_speed</code> 1, <code>_bump</code> 4, <code>_fresnel</code> 5,
+    <code>_warp</code> 1. Two are ours: <code>_taper</code> (48) fades the displacement to
+    nothing where the floor is within a few feet of the surface, so the water's edge is not
+    smeared out from under it, and <code>_guard</code> rejects a displaced sample that lands
+    on something <em>nearer</em> than the surface, so a torch on the bank is not pulled into
+    the pool. The tint on the refracted view fades with the surface, because far water is
+    already the fog's own pixel and tinting that painted distant pools as green shapes cut
+    out of the murk.
+    <br><code>exec watersurface_on.cfg</code> is the shipped look;
+    <code>watersurface_fte.cfg</code> is FTE like for like (crystal-clear, no taper);
+    <code>watersurface_big.cfg</code> the exaggerated version, to see the mechanism;
+    <code>watersurface_off.cfg</code> the flat sheet.</dd>
+
+    <dt>r_watersurface_clear</dt>
+    <dd>How thick the in-water murk is when you look <em>into</em> water from the air, as a
+    fraction of the density inside it. At <strong>1</strong> — your word, with the moat in
+    front of you: &ldquo;1.0 is right. That is perfect&rdquo; — the murk is as thick from
+    the bank as it is once you are in, so a deep pool hides its bottom and a shallow one
+    reads, with the change eased over a fraction of a second at the waterline either way.
+    0 gives FTE's crystal-clear water from the bank.</dd>
+
+    <dt>r_volumetric_waterdensity · _slimedensity · _lavadensity</dt>
+    <dd>The murk inside. It half-obscures at roughly 70 divided by the value in world units,
+    so 2.5 is a hand's reach — &ldquo;we really can't see a hand in front of our face&rdquo;,
+    which is where your config was — and 1.0 is a room's. Your config carries
+    <strong>1.0</strong>; a fresh install ships 0.4, clearer still. The ladder is yours:
+    <code>exec uw_clear.cfg</code> (0.6), <code>uw_mid.cfg</code> (1.0),
+    <code>uw_thick.cfg</code> (2.5). Lava has a density of its own (0.4), so raising the
+    water to make swimming murky no longer piles the same murk over a lava lake as an
+    orange haze; slime inherits water at -1 and can be set apart. Each has its own colour,
+    <code>_watercolor_</code>, <code>_slimecolor_</code>, <code>_lavacolor_</code> red,
+    green and blue.</dd>
+
+    <dt>r_volumetric_liquidfade</dt>
+    <dd>Clear water is drawn after the fog, so the fog cannot reach it, and without this a
+    pool at the far end of a foggy hall reads bright and hard-edged in the middle of the
+    murk. This fades the surface into the fog with distance like everything else, and it is
+    on at <strong>0.5</strong>: at 1, thick fog fogs the water you are standing beside as
+    hard as the pool across the room, and the near water stops reading as water. 0 for the
+    old picture. The engine says so on the console when you are in the configuration that
+    needs it and have turned it off.</dd>
+
+    <dt>r_volumetric_watermist · _mistheight · r_volumetric_liquidfloor</dt>
+    <dd>The lake. A band of mist lies on every liquid surface, 26 units thick at the
+    shipped height (<code>exec mist_low.cfg</code> 12, <code>mist_mid.cfg</code> 26,
+    <code>mist_high.cfg</code> 40; <code>_watermist</code> is the strength, yours 0.69). At
+    5 it is a skin only the shore ever sees — a ray across the lake never meets it while rays
+    grazing the bank run inside it for a stretch, which is why it once seemed to appear only
+    at the lake's edge. And the surface is the floor of the air above it
+    (<code>_liquidfloor</code>, on): the air murk settles on the local floor, and over a
+    lake the floor beneath a column is the lake <em>bed</em>, so the murk over the water once
+    thought itself hundreds of units up and vanished, while the murk over the bank hung at
+    head height — a hard line along the shore, lit by the torches. Measured on the e1m4
+    lakeside, the fog over the water is now level with the fog over the bank. The one side
+    effect: the cap measures to the <em>nearest</em> liquid, so a walkway beside a pool
+    takes a little more murk within a cell of the edge. <code>exec liquidfloor_off.cfg</code>
+    shows the old picture. The baked map itself places each water top at the surface now
+    rather than up to a body-length above it, which is what once swallowed the fog beside
+    channels and floated the mist a hand above the lake; nothing to set.</dd>
+
+    <dt>r_waterswirl</dt>
+    <dd>The surface churns gently under the fog's own noise on top of the classic scroll,
+    so the sheet stops reading as a sliding decal. 0 is the old look exactly.</dd>
+
+    <dt>rt_metal_liquids · rt_metal_liquids_minlight</dt>
+    <dd><strong>RT Liquid Lighting</strong> on the RT Shadows page: the ray-traced light
+    multiplied into clear water (yours is 0.45; a fresh install ships 0). One caveat. Liquids
+    are kept out of the shadow structure on purpose, so they cannot block shadows or god
+    rays — which means the light the water takes is the light of whatever lies <em>under</em>
+    it, shadows included, and submerged geometry can print itself onto the surface: on e1m1
+    the bases of the pillars read clearly through slime you should barely see into.
+    <code>_minlight</code> puts a floor under that light and the shapes go. It is on at 5,
+    so you should never meet the problem; the trade is that a floor that high flattens the
+    effect into a plain brightening, because the printed shapes and the light's variation
+    are the same thing. 3 gives a little more variation for a little more showing through;
+    0 is the old unclamped behaviour.
+    <br>Two other answers were built and you sent both back. One light reading per pool
+    (<code>exec liquid_own_on.cfg</code>) showed its seams as large squares over the slime.
+    The honest version — the water's own light at every pixel, with a <em>reflection</em> of
+    the room mirrored off the surface, faint straight down and strong across a lake
+    (<code>exec liquid_rt_on.cfg</code>) — worked, and you decided against it:
+    &ldquo;I don't think reflections on the water is the way to go.&rdquo; Both stay as A/Bs,
+    off.</dd>
+
+    <dt>rt_metal_liquidemissive</dt>
+    <dd>Opaque water and slime get the lava treatment: the rays stop at the liquid surface,
+    so a murky pool reads as its authored murky texture — machinery and secrets beneath it
+    stay hidden — instead of the pool floor's lighting printing through the sheet. With
+    clear water it stands down automatically and the liquid lighting above takes over.</dd>
+  </dl>
+
+  <p class="note"><strong>If you have a replacement texture pack installed</strong> — the
+  QRP map textures are — a replacement image for a water, slime or lava texture used to make
+  the engine load it as an ordinary opaque wall, throwing away the fact that it was a
+  liquid: no transparency, no ripple, no boil, no glow, no lava light, and liquids casting
+  shadows they should not. That is fixed and on by default (<code>m5_liquidflags</code>);
+  <code>0</code> restores the old behaviour exactly.</p>
+
+  <p class="note"><strong>What the water costs</strong>, measured on a settled machine:
+  about two thirds of a millisecond of GPU where the frame is all water, which comes to 3%
+  of the frame on e1m2's moat, 9–10% in e1m1's slime hall and 5–7% on e2m4 — the drawn
+  floor, the copy of the frame and the surface itself together — and nothing where no clear
+  water is in view. The tier figures further down were taken before the water shipped, so on
+  the maps with water in them they are a few percent high.</p>
+
+  <div class="where">
+    <span class="kicker">Where to look</span>
+    <p>The start of e1m2 — the pools either side of the bridge, and the moat beyond it with
+    the pillars running down into the water and the far wall's foot showing through. The
+    moat on e1m3, from the bank. The slime at the start of e1m1, the Slipgate Complex, and
+    the moat by its first bridge with a torch on the far wall. Then e1m4's lake, from the
+    cave mouth, for the mist. Then walk in.</p>
+  </div>
+</section>
+
+<section class="plasma" id="lightning">
+  <span class="kicker">IV &middot; The lightning gun</span>
+  <h2>The bolt and the ball</h2>
+  <p class="epigraph">The bolt is a straight line drawn between you and what you have
+  decided to kill. The ball is a decision you have let go of.</p>
+
+  <p class="opener">There are two ways to spend a cell. Hold the trigger and the thunderbolt
+  is a jagged white line that re-rolls its shape fifteen times a second and burns the room it
+  crosses. Press 9 and a different gun rises in your hands — the plasma gun from
+  <em>Dissolution of Eternity</em> — winds up for half a second with a rising whine, and
+  lets go of a sphere of plasma that drifts down the line you aimed, arcing at everything it
+  can see. It does not care whose side you are on. After a second in the air it will take
+  you as readily as anything else, and it hums while it decides.</p>
+
+  <h3>The thunderbolt</h3>
+
+  <dl>
+    <dt>r_lightningbeam_m5</dt>
+    <dd>On by default. The thunderbolt becomes a real discharge: jagged, forked, re-rolling
+    its shape about fifteen times a second, and <em>lighting the room</em> as it goes. It
+    burns brighter and sizzles louder the moment it connects with something, so you know you
+    are hitting. Its colour follows the lightning colour sliders you already have. It holds
+    one overall shape for about half a second and then jumps to another, the way an arc in a
+    plasma globe does, and it is clipped to the world so it never draws through a wall or a
+    pillar. <strong>Options → Lightning Gun</strong> is its page: <em>World Light</em> is the
+    row to reach for first and <em>Wildness</em> the one that changes its character most,
+    with Branches, Core Hotness, Core Volume and Fog Scatter beside them. <code>0</code> gives
+    the stock beam back, exactly.
+    <br>Its tips behave like the real thing. Every free end — where the bolt lands, and
+    each fork dying in mid-air — frays into finer, dimmer, wilder branches, the last stretch
+    is furred with hair-thin streamers, and the ends dissolve away instead of stopping square
+    on a blunt edge. The previous instant's fray lingers underneath as it fades, so the fine
+    detail shimmers rather than flickering on and off at the re-roll rate.
+    <code>r_lightningbeam_m5_frizzle 0</code> gives you the old blunt tips.
+    <br>The beam's edge boils. The bolt's own radius is modulated by a travelling noise, so
+    its width breathes along its length and the edge writhes rather than sitting as a smooth
+    tube — the same idea as the lava's heat shimmer, and noise rather than a sine wave for the
+    same reason. The shipped numbers are the ones you tuned in play: a fine ripple travelling
+    slowly, because the crackle comes from the shape re-rolling and the boil only has to
+    drift. <code>r_lightningbeam_m5_fizz 0</code> gives the smooth tube back;
+    <code>_fizz_scale</code> sets how long a ripple is and <code>_fizz_speed</code> how fast
+    it travels.
+    <br>The bolt is drawn as a distance field on Metal, which removes the over-bright cross
+    that used to appear at every kink — worst near the gun, and very obvious in screenshots —
+    and leaves the beam thinner and more sharply defined.
+    <code>r_lightningbeam_m5_sdf_gain</code> makes it brighter or dimmer,
+    <code>..._sdf_falloff</code> tighter or softer, <code>r_lightningbeam_m5_sdf 0</code>
+    goes back to the ribbon. And the arc no longer leaves the same prong every time: it
+    wanders between the gun's three electrodes a few times a second, the way an arc really
+    does. <code>r_lightningbeam_m5_muzzlenodes 0</code> pins it to the right-hand one.
+    <br><small><strong>The lighting needs RT Shadows on.</strong> Without the ray tracer the
+    bolt is still jagged, but it lights nothing — there is no other route in this engine. The
+    fog glow additionally wants <code>rt_metal_fog</code>. It supersedes the old
+    <code>cl_beams_lightatend</code>, which is console-only.</small></dd>
+  </dl>
+
+  <h3>The ball</h3>
+
+  <dl>
+    <dt>m5_balllightning</dt>
+    <dd>On by default: a ninth weapon, on key 9, with a <strong>Ball Lightning</strong> row on
+    the M5 Fun Mods page. Own the thunderbolt and you also own its launcher. Key 9 selects it
+    (<code>impulse 202</code>; press again for the bolt), the engine binds the key for you
+    unless your config has already given 9 to something else, and it spends the same cells,
+    paid at the press.
+    <br><strong>The flight.</strong> The gun winds up for under half a second, a globe
+    growing at the muzzle and a whine rising with it, and the ball leaves the barrel as a
+    bubble a quarter its size and swells to a globe a few feet out. It flies at 400 units a
+    second down the line you aimed — brisk, but a thing you can watch — with a slow sway on
+    its course, for 3.75 seconds. It leans gently toward whatever is near it, more toward a
+    Shambler than a grunt, but it never turns to hunt: it is a dumb ball of plasma, and it
+    goes where you sent it. Its body is small enough to pass any gap you can.
+    <br><strong>What it does.</strong> Ten times a second it zaps <em>everything</em> living
+    it can see within its reach — the damage falling with distance and doubled at point
+    blank — and sets it alight, whatever the Lightning Ignites row says: it is plasma. It
+    draws its arcs at the nearest four, and an arc that lands forks on from its victim to the
+    next living thing the victim can see, two hops out, so a pack dies together. A direct hit
+    is fatal to anything but a Vore or a Shambler, and either way the globe disintegrates:
+    the shell swells and blows apart in a flash, a ring, a storm of sparks and a thunderclap,
+    and a spherical blast of a rocket and a half falls on everyone around the victim. On
+    Quad Damage, which multiplies it by four like every weapon, a direct hit clears the
+    room.
+    <br><strong>How it ends.</strong> When its life runs out, or it touches water, it
+    discharges — a blink, a shockwave ring, sparks, a thunderclap — and ignites whatever
+    survives. A wall or a door does not explode it: it stops there and <em>earths</em>,
+    throwing an arc into the surface with a pop and then another every sixth of a second,
+    sparks and scorches at each, while the shell collapses into the stone. And after one
+    second in the air it is armed against you as well. A standing shot is always clear;
+    chasing it is not. The drone rises in pitch as it comes within its reach of you and a
+    violet cast creeps in at the edges of the screen.
+    <br><strong>The look.</strong> A plasma globe: a dark sun boiling with plasma, ridged
+    cells veined blue-white, turning slowly, rim-lit, three-quarters opaque so that it dims
+    what lies behind it. Fine violet filaments ride its surface and curl out to the glass;
+    the longer it flies the more violently its surface heaves, the filaments lifting off as
+    prominences and the eruptions throwing sparks; when an arc lands the core flares and one
+    or two thick filaments take the charge, like a hand on the glass. Its arcs are plasma
+    filaments too. It carries a light in the bolt's own hue and flicker that scatters in the
+    fog like the bolt's, the fog shrouds it as it would a torch, and it leaves a short
+    blue-white comet. Metal draws the sphere; the GL path draws a knot of strands.
+    <br>Every number is a <code>m5_balllightning_*</code> console cvar — speed, life, reach,
+    damage, cost, the blast, the lean, the charge, the fizzle, the arming second, how many
+    arcs it draws and how far they chain — and the globe's own radius, palette and edge cast
+    are <code>r_lightningbeam_m5_ballsize</code>, <code>_ballcolor_*</code> and
+    <code>_ballpressure</code>. <code>exec ball_v2.cfg</code> is this ball;
+    <code>ball_v1.cfg</code> the slower, gentler one from the first day, for A/B;
+    <code>ball_off.cfg</code> removes the weapon entirely. The Weapon Kick row gives it a slow
+    heave. The glow it trails and the burst it dies in are blocks in
+    <code>m5/effectinfo.txt</code>, tunable live with <code>cl_particles_reloadeffects</code>.</dd>
+  </dl>
+
+  <div class="where">
+    <span class="kicker">Where to look</span>
+    <p>The skill hall of the start map, from the top of the stair: fire a ball down it and
+    watch it drift over the pads, then chase it and learn why you should not. The start of
+    e1m2, where a pack is waiting at once, to chain through. And a horde
+    wave on dm4 (<code>m5_horde 1</code>, <code>impulse 210</code>) with a fresh ball every
+    refire.</p>
+  </div>
+</section>
+
+<section class="mods" id="mods">
+  <span class="kicker">V &middot; The mods</span>
+  <h2>The mods</h2>
+  <p class="epigraph">The old rules bend here — the guns kick, the dead burn, the waves keep
+  coming — and the game beneath does not object. It has seen worse.</p>
+
+  <p class="opener">The gameplay half lives on <strong>Options → M5 Fun Mods</strong>, each
+  mod its own switch, so the whole page can be put back to the 1996 guns from the menu. The
+  thunderbolt and the ball have the chapter above; the handlamp is here because you carry
+  it.</p>
+
+  <dl>
+    <dt>m5_shotgun</dt>
+    <dd>A Doom shotgun: ten pellets, tighter spread, harder kick, a bigger warm muzzle flash
+    and ejected shells. The shell is a real shotgun hull — red body, brass head — that tumbles
+    as it flies, bounces and comes to rest, instead of the round spark the engine has always
+    drawn (the spin was always there, but a round dot looks the same at every angle).
+    <code>m5_shotgun_casing 0</code> brings the round spark back.</dd>
+
+    <dt>m5_muzzleflash</dt>
+    <dd>On by default since 2026-09-16, on your word once the flash and the sparks had both
+    passed. Quake has never drawn a muzzle flash: the flash is a
+    light and nothing else, so with the fog on it reads as a soft glow round a barrel that
+    shows no flash of its own. With this on, the shotgun, the super shotgun, the nailguns
+    and the two launchers get a starburst with a hot core at the muzzle, read off the weapon's
+    own animated mesh each frame so it follows the barrel through its kick, gone in about
+    seventy milliseconds, drawn over the weapon and brighter than white on the float scene
+    buffer; every monster's gun gets a smaller one as it fires. The same switch makes the
+    sparks off a bullet strike thin hot streaks instead of the round blob stretched into wide
+    yellow rays, and the bullet strike's grey blob a small burst. The thunderbolt and the
+    ball are their own flash. <code>m5_muzzleflash_size</code> scales it,
+    <code>_forward</code> and <code>_up</code> nudge it in world units;
+    <code>exec flash_off.cfg</code> is the 1996 picture, the light alone, and
+    <code>flash_on.cfg</code> puts it back. On the nailgun the flash
+    alternates between the two barrels with the shots, always on the barrel that fired. Your
+    verdict on the flash: "the flash is fine", the rocket launcher's too.
+    <br><br>The shotgun and the super shotgun also throw a spray of hot streaks from the barrel
+    tip — eight a shot, fourteen from the super shotgun — that travels with the gun, so it stays
+    on the barrel when you strafe, turn or bob, and each streak points out along the barrel.
+    It is drawn like the flash, over the weapon. It has seven knobs, each a scale on the spray
+    as it ships: <code>m5_muzzleflash_sparks</code> is how many (0 for none; the flash and the
+    shells stay), <code>_speed</code> how fast they fly (faster sparks also streak longer),
+    <code>_spread</code> how wide they fan, <code>_length</code> and <code>_thickness</code>
+    the streak itself, <code>_life</code> how long they last and <code>_brightness</code> how
+    bright they start. <code>exec sparks_reset.cfg</code> puts all seven back. The spray needs
+    <code>m5_shotgun</code> on.</dd>
+
+    <dt>m5_torch_embers</dt>
+    <dd>3 by default, a rate; 0 puts the flames back to their 1996 stillness. Every torch, brazier and candle in view
+    sheds that many embers a second — hot grains that rise out of the flame, drift, cool from
+    orange to a dull red and go out within a second or two. Only torches you can see spawn
+    them, and never more than a handful a frame. <code>exec embers_on.cfg</code> /
+    <code>embers_off.cfg</code>.</dd>
+
+    <dt>m5_dust</dt>
+    <dd>Dust in the air. Quake has never had any — every particle it draws is fired by
+    something. Set this to a count (128–512 is the range) and that many motes drift and
+    eddy in the air around you, spawned only in open air you can see, recycled as you move.
+    Each mote is a crisp point, not a blob. <strong>Since 19 September they are flecks of
+    bonfire ash</strong> — sixteen weighted colours, soot and charcoal through charred brown,
+    a warm and a cool grey and slate blue, with <em>one</em> off-white in sixteen — where they
+    used to be an even grey ramp from soot to pure white. That ramp is why they read white,
+    and the reason is arithmetic rather than taste: it is a uniform population, so 57% of
+    motes sat above mid-grey against 12% on the palette, and the mean mote was 143 of 255
+    against 82. <code>m5_dust_tint 0</code> is the old ramp back.
+    They are lit like any other particle, so turn on <code>cl_particles_lighting 2</code>
+    with it: motes catch torchlight, hang in a doorway's light and flare when a rocket goes
+    past. <strong>If they still catch your eye too much, the knob is
+    <code>cl_particles_lighting_static</code></strong> — it dims the light they take from the
+    room's own torches while leaving muzzle flashes, explosions, rocket glow and the handlamp
+    at full strength, so the dust sits dark in a corridor and still flares the instant
+    something goes off. <code>exec dust_ash.cfg</code> is the tuned set,
+    <code>dust_ash_dark.cfg</code> the rung below it and <code>dust_white.cfg</code> the old
+    look exactly. The count is absolute — it does not
+    ride the particle-quality multiplier — and the emitter stands aside when an explosion
+    needs the particle pool.</dd>
+
+    <dt>m5_burn</dt>
+    <dd>The lightning gun sets things on fire — flame, smoke, burn damage, and the victim
+    charring as it goes. The fire carries a real dynamic light, so a burning monster lights
+    the fog and casts ray-traced shadows. A Shambler's bolt sets <em>you</em> alight too. The
+    ball lightning ignites regardless.</dd>
+
+    <dt>m5_venom</dt>
+    <dd>The Scrag's spit reads as acid — <em>Alien</em> rather than fireworks. A yellow-green
+    light rides the projectile, so it lights the wall it is passing and the fog it is passing
+    through, and casts real shadows on the way. Its trail burns instead of sitting flat, and its
+    impact sizzles: vanilla drew nothing whatever when a spit hit flesh.</dd>
+
+    <dt>Weapon feel</dt>
+    <dd>Five rows, each its own switch: four ship on, and the grenade bounce is off. <strong>Weapon Kick</strong>
+    gives every gun a kick of its own instead of the stock two degrees — a snap from the
+    shotgun, a heavier one with the view shoved back from the super shotgun, a tremor from
+    the nailguns, a lob from the grenade launcher, a real shove from the rocket launcher, a
+    buzz from the thunderbolt, a slow heave from the ball gun; the slider is the strength,
+    1 as designed; your verdict, "weapon kick feels fine". <strong>Grenade Bounces</strong>
+    gives the bounce a random pitch and a volume that follows the impact, and a dull tap once
+    it is barely rolling — and your ear rejected it ("it sounds like a xylophone"), so it
+    stays off and <code>feel_on.cfg</code> sets it back to the stock bounce.
+    <strong>Nail Tracers</strong> puts a short hot streak behind every third of your own
+    nails, so a burst shows in fog where a bare nail does not; <code>m5_nailtracer_every</code>
+    sets how often (5 for every fifth, 1 for every nail). <strong>Nails From Barrels</strong>
+    lines the nailgun's two alternating streams up with its two barrels, so each nail appears
+    at the tip of the barrel that fired it, where the flash is. id started each nail a little
+    wide of its barrel, so on screen the streams seemed to leave from outside the gun
+    ("they were too wide before"). The nails still hit where id's did. The super nailgun keeps
+    id's single centre line. <strong>Axe Sparks</strong> throws sparks and a ricochet ring off
+    a wall the axe hits ("fine"). Your verdict on the set was "perfect. feel_on is good. make
+    that default", so the kick, the tracers, the barrel streams and the axe sparks are on by
+    default, with the stock bounce. <code>exec feel_off.cfg</code> puts all five back to the
+    1996 guns; <code>feel_on.cfg</code> brings the shipped set back.</dd>
+
+    <dt>Explosions and teleports</dt>
+    <dd>Quake explosions have never had smoke. They do now: a white blink, a bang and an
+    expanding shockwave ring that blinks the room's light with them, a fireball with real
+    structure rather than a smooth ball, then — a beat later, so you see the fireball first —
+    hot brown smoke rolling up close in and a slower grey plume boiling above it, embers that
+    fall and bounce, and a scorch mark. Teleports lose their cloud of
+    three thousand grey dots in favour of a hundred and forty-five streaks and motes — which
+    is a speed change as much as a look one, because a teleport fires on every respawn and
+    three times for every monster a horde wave spawns. The 1996 sprite — the flat orange
+    fireball Quake has always drawn — is gone by default: it was the last part of an
+    explosion with a hard bottom edge against any surface not seen head on, and the one part
+    the fog could never reach (drawn after the fog, no depth), so in a thick corridor it
+    stayed bright and sharp while the new fireball and smoke sat in the murk at their own
+    distance. <code>m5_explosion_sprite 1</code> brings it back.
+    <br><small>This lives in <code>m5/effectinfo.txt</code>, which is <em>data</em>, not code.
+    Edit it and type <code>cl_particles_reloadeffects</code> in the console to see the change
+    immediately — no rebuild, no restart. Rename the file to get the old effects back.</small></dd>
+
+    <dt>torch — the bad torch</dt>
+    <dd>A handlamp you carry: warm tungsten, a soft-edged cone, and thoroughly unreliable.
+    It grumbles constantly, swoons to a third of itself about every twelve seconds, and
+    roughly every minute nearly dies — a second of sullen ember-red before it catches
+    again. It reddens as it dims, the way a cooling filament really does. The beam trails
+    your view slightly, as though swinging in your hand, and drifts when you stand still.
+    <strong>It can never go out</strong>: the floor is built into the code, not into a
+    setting, because a lamp that reaches zero is a strobe — and that stays true whatever
+    you set the two brownout timings to. Its edge falls off over more than half its width,
+    so it reads as a beam on a wall rather than a stencilled disc, and it scatters in fog
+    strongly enough that the shaft of it is visible in the air and not only the patch where
+    it lands.
+    <br><small>There is no menu row — it wants a key. <strong>Options → Customize
+    Controls → torch (handlamp)</strong>, or type <code>bind f torch</code>. An engine
+    default cannot beat your saved config, so it has to be bound once by hand. The beam,
+    its shadows and its scatter through fog all come from the ray tracer on your settings;
+    <code>m5_torch_cone</code> takes it from spot to lantern and
+    <code>m5_torch_softness</code> decides how hard its rim is (0.35 is a disc-like edge,
+    1 a gradient all the way to the axis). <code>m5_torch_filament</code> (0&ndash;1) shows
+    the bulb: a hot core about a third of the beam across with a faint dark ring outside it,
+    like a cheap reflector imaging its filament, on the wall, in the fog and in the bounce
+    alike. <code>m5_torch_dip_period</code> and <code>m5_torch_swoon_period</code> are the
+    two brownout timings in seconds.</small></dd>
+
+    <dt>m5_horde</dt>
+    <dd>Wave survival on any map. With <code>notarget</code> on, the monsters ignore you and
+    fight each other instead. <strong>Horde Director</strong>, the row beneath it, lets the
+    horde read you: at each wave's start it weighs your health and armour, the ammo for the
+    guns you own, how fast you cleared the last wave and how badly it hurt, and shapes the
+    next one — a smaller wave of rabble and a longer breather after one that nearly had you,
+    a bigger wave with more of the heavies and a shorter break when you are fat, and a
+    supply drop that grows when you need it. <code>impulse 211</code> shows what it made of
+    you. Off by default, so the fixed waves of before are one click away.</dd>
+
+    <dt>m5_bullettime · m5_photomode · m5_movement · m5_gore</dt>
+    <dd>Hold a key to ease time down; freeze the world and fly around with the HUD hidden;
+    Quake 3 air control or easy bunnyhopping; and gore from vanilla up to ludicrous.</dd>
+
+    <dt>m5_noclipfly</dt>
+    <dd>On by default: <code>noclip</code> flies where you look — forward follows your
+    view up and down at full speed, the way Quake Enhanced does it. Set it to 0 for the
+    classic level-flight noclip.</dd>
+  </dl>
+
+  <h3>Impulses worth binding</h3>
+  <p><code>200</code> cycle gore · <code>201</code> toggle shotgun · <code>202</code> ball
+  lightning, again for the bolt · <code>210</code> next wave · <code>211</code> horde status ·
+  <code>222</code> pentagram · <code>223</code> quad · <code>224</code> ring of shadows. The
+  last three need <code>sv_cheats 1</code>.</p>
+</section>
+
+<section id="packs">
+  <span class="kicker">VI &middot; More Quake</span>
+  <h2>The mission packs</h2>
+  <p class="epigraph">Beyond the four episodes there are other dimensions, and they were
+  built by other hands.</p>
+
+  <p class="opener"><strong>Single Player → Mission Packs</strong> switches between Quake
+  and the five add-ons: <em>Scourge of Armagon</em>, <em>Dissolution of Eternity</em>,
+  <em>Dimension of the Past</em>, <em>Dimension of the Machine</em> and <em>Arcane
+  Dimensions</em>. It takes effect immediately — no restart, no command line. Anything not
+  installed is greyed out and marked absent.</p>
+
+  <p>The MetalQuake <em>content</em> comes with you: the higher-poly models and the map
+  textures still apply, and every engine feature in this guide — the ray tracing, the fog,
+  the water, the thunderbolt — is unaffected, because none of it lives in a game directory.
+  The <em>gameplay</em> mods do not, because a mission pack brings its own game code and
+  replacing it would break the pack. Those rows grey out while a pack is loaded and tell
+  you why.</p>
+
+  <p>The packs each carry their own lighting, and they used to arrive looking nothing like each
+  other — Armagon far too dark, Dimension of the Machine sun-baked and glowing orange. Most of
+  that was a genuine bug: modern map compilers write light colours on a 0–255 scale and this
+  engine read them as 0–1, so a modern map's lights arrived up to <em>255 times</em> too bright
+  and strongly tinted. With that corrected, each pack is levelled towards Quake's own
+  brightness while keeping the colour its mapper actually chose, and a map that asks for its
+  own fog now gets one fog rather than two.</p>
+
+  <p>Each pack has a small text file of its own — <code>m5/m5pack_hipnotic.cfg</code> and its
+  siblings — holding just the handful of settings that differ for that pack. They are meant to
+  be edited; delete one and that pack simply runs uncorrected.</p>
+
+  <p class="note">Dimension of the Machine's <code>horde</code> maps will load but not play:
+  that mode lives in the rerelease's own engine, not in the map.</p>
+
+  <p class="note">One local tweak ships with Arcane Dimensions: its own config turns on the
+  mod's <em>developer helper</em> markers — translucent direction arrows and little spinning
+  diamonds scattered around path corners, teleports and monsters — because this engine keeps
+  developer mode on for its diagnostics. They are switched off in <code>ad/quake.rc</code>.
+  If you ever reinstall AD from a fresh download you will see them again; the fix is one line
+  and it is written down in <code>docs/CONTENT.md</code>.</p>
+
+  <p><strong>Arcane Dimensions</strong> is a different beast from the mission packs: a full
+  total conversion with its own weapons, monsters, breakable scenery and secrets, and its own
+  custom HUD (which works here). Because it replaces the game code wholesale, the M5 gameplay
+  mods are off inside it by construction — but everything engine-side still applies: the ray
+  tracing lights its candle halls, the murk takes each map's own fog colour, the enhanced
+  thunderbolt still fires, and it is the one place with a real sun to switch on. Its start
+  map is a hub; walk into a portal to pick a level. Two tips: the key inventory is
+  <code>impulse 175</code> (AD suggests binding <code>i</code> to it — bind it yourself if
+  you want it, it is deliberately not bound for you), and its maps are the biggest this
+  engine runs, so if a frame ever feels heavy, the M5 Quality row is the lever.</p>
+</section>
+
+<section id="sway">
+  <span class="kicker">VII &middot; Stillness</span>
+  <h2>The view that never quite settles</h2>
+  <p class="epigraph">Stand still long enough and the view begins to drift, as though the
+  thing behind the eye were breathing.</p>
+
+  <p class="opener">Stand still for a second or two without moving the mouse and the view
+  begins to wander — the same slow drift the end-of-level camera has. Touch anything and it
+  snaps back out inside a quarter of a second, so it never fights you.</p>
+
+  <p>Quake shipped this and then switched it off. The three sine terms that produce the drift
+  have been in the code since 1996, driven by a value called <code>v_idlescale</code> that
+  nothing in the engine ever set. Original Quake used it in exactly one place — it forced the
+  intermission camera to drift — and even that was lost along the way. Both are back.
+  <strong>Options → Idle View Sway</strong> turns it off if you would rather stand
+  perfectly still.</p>
+
+  <p class="note">It moves the view, never your aim: the drift is added to the camera, not to
+  the angles the server sees.</p>
+</section>
+
+<section id="dark">
+  <span class="kicker">VIII &middot; Darkness</span>
+  <h2>How dark it should be</h2>
+  <p class="epigraph">Between the torches the black is honestly black. It is not empty.</p>
+
+  <p class="opener">Quake is a game about not being able to see. The stock brightness
+  controls could not reach the bottom of that — the menu floored gamma at 0.5 and contrast
+  at 1.0 while the engine itself allows far lower — so <strong>Options → Brightness and
+  Gamma</strong> leads with a single <em>Brightness</em> slider that covers the whole
+  range.</p>
+
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr><th>Slider</th><th>What you get</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>0%</td><td>Almost unplayable. Inky black; you can barely make anything out.</td></tr>
+      <tr><td>15%</td><td>Very dark and gloomy, inky corners and shadows.</td></tr>
+      <tr><td>25%</td><td>Moody and atmospheric, but comfortably playable if you know the map.</td></tr>
+      <tr><td>50%</td><td>The 1996 look — and exactly no change at all.</td></tr>
+      <tr><td>100%</td><td>Clearer and more lit than Quake ever was.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>It scales the gamma curve, so it dims the whole finished frame rather than just the
+  lighting. That is deliberate: the fog's colour is authored rather than lit, so dimming the
+  lighting alone would leave the fog looking like it was glowing on its own. The three rows
+  under the slider — gamma trim, contrast, scene brightness — are trims for a particular
+  display, not the main control.</p>
+
+  <p class="note">If your blacks still will not go dead, the last thing holding them up is
+  <code>rt_metal_ambient</code> (0.15), a flat fill that stops surfaces facing away from every
+  light going pure black under wall lighting. It is light with no source, on purpose.</p>
+</section>
+
+<section id="edr">
+  <span class="kicker">IX &middot; Brightness</span>
+  <h2>Letting the highlights off the leash</h2>
+  <p class="epigraph">A muzzle flash, for a single frame, brighter than the glass was built
+  to show.</p>
+
+  <p class="opener">Everything above is about how dark the game can go. This is the other
+  end. On a display running in macOS HDR mode, <strong>Extended Dynamic Range</strong> hands
+  a muzzle flash or a pool of lava to the screen <em>brighter than white</em>, instead of
+  flattening it to the same white the health digits are already at. The HUD deliberately
+  stays at ordinary white while the scene runs past it — so the two side by side in one
+  frame are the test.</p>
+
+  <p>It is one switch: the <strong>HDR (EDR)</strong> row on <strong>Options → Video
+  Options</strong>, or <code>r_edr 1</code> in the console. Everything it needs — the float
+  scene buffer, the analytic gamma curve — it sets up for itself (about 8% of a frame,
+  and a one-off shader-rebuild pause the first time).</p>
+
+  <p>The test is in the frame itself: the HUD stays at ordinary white on purpose, so a
+  muzzle flash or a glow should read clearly brighter than the health digits beside it. (The
+  desktop dimming when it takes hold is sometimes quoted as the tell — on this rig it does
+  not, and the effect works regardless, so judge it by the game.) <code>r_hdr_shoulder
+  0.75</code> alongside it is worth having: it rolls the brightest parts smoothly up into
+  the new range instead of letting them pile up at the top (a value of 1 is clamped to
+  0.99, which is effectively off — 0.75 is the knee to use). If the last few bright specks
+  on monster edges bother you, <code>r_fxaa 1</code> in the console (there is no menu row)
+  softens them at a small cost in texture crispness. <code>r_edr 0</code> puts
+  everything back exactly.</p>
+
+  <p>The bloom is the other half of a highlight, and the engine's own is the 2001 one:
+  the scene shrunk to a small buffer, squared a few times and blurred with offset quads,
+  with no threshold and no chain of sizes, so every bright thing becomes a wide haze rather
+  than a hot core with a glow. <code>r_bloom_m5 1</code> (with <code>r_bloom 1</code>, the
+  master and its menu row) replaces it: a soft threshold on the float scene buffer at half
+  resolution, five halvings down through a thirteen-tap box, and a tent upsample summed back
+  up, added by the same composite as before. A muzzle flash, a lava pool or the core of a
+  bolt gets a tight bright core and a glow that falls off across the room instead of a
+  smear. Your six bloom knobs are the old chain's and are ignored while it is on;
+  <code>r_bloom_m5_threshold</code> (1: only what is brighter than white),
+  <code>_knee</code> (0.5: how softly it engages), <code>_intensity</code> (0.35) and
+  <code>_levels</code> (5: how far the glow reaches) shape this one.
+  <code>exec bloom_m5_on.cfg</code> / <code>bloom_m5_off.cfg</code>; it takes the old
+  chain's place rather than adding to it, and it costs about a tenth of a millisecond more than
+  the old blur at your settings (+3.7% of the renderer's GPU time, measured by toggling the two
+  in one boot). Off by default until your eye has passed it.</p>
+
+  <p>If nothing happens, type <code>r_edr_report</code>. It says in one sentence which
+  requirement is missing, and then prints what headroom every attached display is
+  actually giving you.</p>
+
+  <p class="note">A screenshot cannot show you any of this, and neither can a screen recording
+  — there is no above-white information in an image file, so both come back looking exactly
+  like the ordinary picture. It has to be judged on the glass.</p>
+</section>
+
+<section id="perf">
+  <span class="kicker">X &middot; Performance</span>
+  <h2>One control for the lot</h2>
+  <p class="epigraph">The machine has a temperature and a mood, and every number below was
+  taken when it had settled into both.</p>
+
+  <p class="opener"><strong>Options → M5 Quality</strong> cycles <strong>seven</strong>
+  tiers across thirty-four settings at once. <strong>Since the 19 September retier every tier
+  but Stock renders at 37.5% and traces the ray-traced light at exactly that size</strong> —
+  pixel for pixel with the raster — and antialiases the result at full size after the
+  upscale. That pairing is what removes the jagged silhouettes, and it is cheaper than what it
+  replaced: Ultimate used to render at 1920×1080 and magnify a 720×405 traced term onto it,
+  and now renders 720×405 and traces 720×405, which is <strong>the same trace with a raster
+  7.1× smaller</strong>. Paired and measured on demo48, three rounds in alternating order, the
+  new Ultimate is <strong>×1.50–1.61</strong> of the old one on the average and ×1.36–1.42 on
+  the worst second.</p>
+
+  <p><strong>Ultimate is <code>exec rich.cfg</code> wired into the menu</strong> — your own
+  19 September verdict, "it looks best (i.e. sky jaggies gone) if I select Ultimate in the
+  menu, and then exec rich.cfg", in one click. <strong>Better, Best and Ultimate</strong> use
+  the <em>temporal</em> scaler with its reactive mask; <strong>Superfast, Fast</strong> and
+  <strong>Good</strong> use the spatial one — Superfast went back to spatial on the 19th,
+  because the reason it had been moved to temporal the day before ("spatial cannot reconstruct
+  a silhouette") stopped being true once the antialiasing moved to full size. Bounce lighting
+  is on for Best and Ultimate only.</p>
+
+  <p><strong>The figures below are ONE bed, not five.</strong> They are demo48 — the heavy
+  e1m2 exchange — measured on an M5 at exclusive fullscreen 1920×1080 after the machine had
+  soaked, two interleaved rounds, with the reference runs at either end of each round agreeing
+  within 0.4–2.5%. The old five-bed ranges belonged to the old table and would be a lie
+  against this one. <strong>The five-bed suite is owed</strong>, and so are the old per-tier
+  targets, which are retired rather than missed: 240/180/144/120/80 belonged to a table whose
+  most expensive lever has been removed.</p>
+
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr><th>Tier</th><th>Average</th><th>1-second low</th><th>What gives</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Stock</td><td>351&ndash;364</td><td>292&ndash;329</td><td><strong>1996.</strong> GLQuake 1.09 as nearly as this engine can manage it, on the art already installed: no ray tracing, no volumetric fog, no bloom, no antialiasing or upscaling, no HDR, no red glow, no lava boil or heat haze, no water or teleporter swirl, no enhanced thunderbolt, no dust or handlamp &mdash; baked lightmaps, GLQuake&rsquo;s disc particles, the 10&nbsp;fps animation snap, and the <em>original id textures</em> rather than the replacement pack (that last one takes effect on the next map load). Your own brightness, gamma and contrast are set aside for the 1996 reference while it is on, because a curve calibrated for ray-traced lighting renders a baked lightmap almost black. <strong>Nothing of yours is overwritten</strong> &mdash; every one of those is suppressed where the renderer asks for it rather than by changing your settings, so leaving Stock restores your picture exactly.</td></tr>
+      <tr><td>Superfast</td><td>149&ndash;159</td><td>92&ndash;96</td><td>renders at 37.5% with a raster-exact traced term and full-size antialiasing, upscaled <strong>spatially</strong>; the smallest fog buffer (180&times;101) and twelve fog steps with a shadow cast every sixth; no per-light fog shadowing, no bounce light, the flat fog history. <strong>It is within noise of Fast on this bed</strong> &mdash; every fog lever left below Good is worth 2&ndash;3% at this geometry, and there is no cheap structural lever under it that keeps the clean edges</td></tr>
+      <tr><td>Fast</td><td>148&ndash;149</td><td>93&ndash;96</td><td>as Superfast plus the per-light fog shadowing and its single-pass hybrid, a shadow cast every fourth step, sixteen fog steps and twelve GL-march steps. <strong>Within 2&ndash;3% of Good</strong></td></tr>
+      <tr><td>Good</td><td>144&ndash;145</td><td>94&ndash;95</td><td>the spatial upscaler, a 240&times;135 fog buffer, the 2D fog history rather than the three-dimensional volume; no bounce light. This is the <strong>cheapest tier that still holds the full fog kernel</strong>, and the rung above it is the big one</td></tr>
+      <tr><td>Better</td><td>112&ndash;113</td><td>73&ndash;76</td><td>the <strong>temporal</strong> scaler with its reactive mask and the three-dimensional fog volume at 24 slices &mdash; the two together are worth &times;1.28 over Good, the largest rung in the table; no bounce light</td></tr>
+      <tr><td>Best</td><td>102&ndash;103</td><td>55&ndash;69</td><td>Better plus <strong>bounce light</strong> and 32 froxel slices &mdash; &times;1.10 over Better</td></tr>
+      <tr><td>Ultimate</td><td>99&ndash;100</td><td>66&ndash;68</td><td><strong><code>rich.cfg</code> exactly</strong>: Best at a 320&times;180 fog buffer. That last rung is only &times;1.02 &mdash; the fog buffer was the most expensive resource in the engine when the raster was 1280&times;720, and at 720&times;405 it is not. <strong>Ultimate and Best are the same speed on this bed</strong>, and the lever that would separate them is bounce light, which is yours to spend</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Jagged silhouettes &mdash; SOLVED on 19 September, and the cause was not the
+  render scale.</strong> You reported jagged edges where an object meets the sky, and where
+  something near meets something far &mdash; worst on Superfast, still visible on Best. The
+  first diagnosis blamed the render scale and the upscaler. It was wrong, or rather it was
+  half the story: what ramps a silhouette is <strong>the ray-traced term being magnified onto
+  the raster</strong>. Under wall lighting that term <em>is</em> the scene lighting, and a
+  magnified term smears each step over about two rows &mdash; which is precisely the shape a
+  morphological antialiaser cannot see. On your own <code>aaroof.dem</code> the staircase
+  measures 0.362 untreated, <strong>0.384 with <code>r_smaa</code> alone (worse)</strong>,
+  0.318 with a raster-exact term alone, and <strong>0.229 with both</strong>. Neither half
+  gets there; the pair does.</p>
+
+  <p>Every tier now ships that pair, so there is nothing to switch on. <code>r_fxaa_post</code>
+  is superseded by <code>r_smaa</code> and both it and <code>r_fxaa</code> are pinned off by
+  the tiers &mdash; <code>r_fxaa</code> runs at the <em>render</em> resolution, where at 37.5%
+  it only softens what the scaler is about to work from. If you want the old render-resolution
+  FXAA back, <code>exec fxaa_on.cfg</code>; the M5 Quality row will then read Custom, honestly.
+  <strong>One trap worth knowing, because it cost a session:</strong>
+  <code>exec nofx_aa.cfg</code> appeared to do nothing when run on top of Ultimate. It asks for
+  the <em>spatial</em> scaler so that <code>r_smaa</code> has a full-size target &mdash; but
+  the spatial scaler is refused at Render Scale 100%, which is what Ultimate had, so there was
+  no scaler, no target, and the pass silently did not run. A refused pass draws a perfectly
+  correct frame and says nothing.</p>
+
+  <p><strong>The second filter, and the pairing it needs.</strong> FXAA corrects at most half
+  a pixel, and only near a step's ends &mdash; which is exactly why your steep A-frame leg came
+  out &ldquo;super smooth&rdquo; and the shallow lit band came out &ldquo;jagged af&rdquo;. The
+  leg steps every 3 pixels and is inside the filter's reach; the band steps every 6&ndash;18
+  and is not, and widening the reach past about 24 makes every slope worse rather than better.
+  <code>r_smaa 1</code> runs a morphological pass instead: it walks each step to both its ends
+  and blends every pixel along it by that pixel's own coverage, which is a ramp across the
+  whole tread rather than a nudge at its ends. Against an analytic edge whose right answer is
+  known it takes a 1:6 staircase from 0.340 to <strong>0.008</strong>, where FXAA at span 8
+  reaches 0.230.</p>
+
+  <p>It has one condition, and on your own frames it is the condition that decides everything.
+  A morphological pass needs a <em>step</em>. Soften that step over two or three rows and it
+  can no longer tell which row the boundary is on, so it correctly declines to act &mdash; the
+  same 1:6 edge, ramped over three rows, goes only to 0.230. Your band's edge is ramped: its
+  largest single-row step carries 0.48 of the transition's contrast where a clean step carries
+  1.00. What softened it is the ray-traced light, which Ultimate draws at 600&times;337 and
+  enlarges 3.2&times; to fill the screen &mdash; and under wall lighting that light <em>is</em>
+  the picture. Draw it at full size with <code>rt_metal_scale 1</code> and the pair reads
+  <strong>0.229</strong> on your own demo against 0.362 untreated and 0.283 for the best FXAA.
+  Neither half gets there alone. The term at full size costs frames, so the pair is a trade
+  rather than a free win; <code>exec aa_term1_smaa.cfg</code> is it, <code>aa_smaa.cfg</code>
+  is the pass alone, and <code>aa_reset.cfg</code> puts your saved settings back. Both default
+  off until you have judged them.</p>
+  </div>
+
+  <p class="note">Every row above was measured on <strong>one afternoon, on one machine
+  state, on the same five maps</strong>, with Good, Better, Best and Ultimate re-taken the
+  evening the fog verdict landed &mdash; so the rows really are comparable with each other. Three
+  things to know about the numbers. They are <strong>hot-state</strong> figures: the
+  machine is roughly a third faster for its first few minutes and then settles, and the same
+  demo run fourteen times in a row falls from 148&nbsp;fps to 111 and stays there. The
+  1-second minimum is a single worst second, so it wanders more than the average does. And
+  two things have shipped since the table was taken, in opposite directions: the water costs
+  a few percent on the maps with water in them, and the cheaper single-pass form of the fog's
+  light test with a cast every fourth step gives Best and Ultimate a few percent back; the
+  next settled bench squares it.</p>
+
+  <p>Read it as bands: <strong>Best</strong> is the full look &mdash; temporal smoothing, no
+  fog or shadow crawl, bounce lighting on, and every light casting a shadow in the fog &mdash;
+  and it clears 100&nbsp;fps on every map measured. <strong>Better</strong> keeps that look
+  and runs about a fifth faster on its own smaller fog and ray-tracing buffers.
+  <strong>Good</strong> trades the temporal smoothing and the bounce light for a big jump in
+  rate; <strong>Fast</strong> runs the same ray-traced fog on a smaller buffer (the
+  depth-aware upsample keeps its edges clean) and can push a high-refresh panel hard;
+  <strong>Superfast</strong> goes further still, trading render resolution and per-light fog
+  shadowing for a rate that saturates a 240&nbsp;Hz panel on every map measured. At the other
+  end, <strong>Ultimate</strong> is the antialiasing tier: it is the only one that renders at
+  native 1920&times;1080, which turns the temporal scaler from an upscaler into pure
+  antialiasing, and it traces the lighting at 720&times;405. The 1-second lows on the busier
+  maps are set by the game's own heavy moments as much as by these settings, and on the
+  heaviest there is a floor no setting can beat: on e3m1, with the ray tracer, the fog,
+  bloom, FXAA, the heat shimmer and the red glow <em>all</em> switched off, the 1-second
+  floor still only reaches 176. Prefer native rendering on another tier? Set
+  <code>r_viewscale 1</code> in the console &mdash; the row then reads Custom.</p>
+
+  <p class="note">Two switches that cost nothing and are kept for the record.
+  <code>exec asskip.cfg</code> (the default) stops the ray tracer rebuilding its picture of
+  the monsters and torches on frames where none of them moved &mdash; a fifth to a third of
+  frames in ordinary play, every frame when you stand still with no torch in view; the
+  picture is identical to the byte. <code>exec pipeline.cfg</code> lets the ray tracer and
+  the ordinary scene draw run on the graphics chip at the same time instead of one after the
+  other; they do, and the frame comes out the same length, because the chip is already fully
+  busy and the work is only reordered. <code>pipeline_off.cfg</code> is the default there.</p>
+
+  <p>The upscaling itself: <strong>Render Scale</strong> picks how much of the window the
+  scene renders at (67% renders 44% of the pixels), and <strong>MetalFX Upscale</strong>
+  hands the scaling to Apple's scaler instead of plain bilinear, which on its own
+  looks soft. With it on, the stonework comes back — measured at 85–106% of the native
+  frame's edge energy against bilinear's 62–70%. The HUD and console stay sharp either way,
+  and it composes with HDR. The M5 Quality tiers set both for you; the two rows on
+  <strong>Options → Video Options</strong> are where you override it by hand. The MetalFX row
+  greys only when the renderer is not Metal; it cycles Off → Spatial → Temporal, skipping
+  Spatial at Render Scale 100% because a 1:1 spatial upscale is a pointless copy.</p>
+
+  <p><strong>Temporal upscaling is what the top three tiers use.</strong> Instead of scaling
+  one frame cleverly, it accumulates several frames that were each rendered a fraction of a
+  pixel apart — which is aimed squarely at the crawling mesh you could see in thick fog,
+  rather than at saving pixels. Measured against the spatial scaler on a frozen foggy view,
+  the fog's frame-to-frame crawl drops by a factor of four or five, and the standing grid
+  halves in strength — because the spatial scaler had been sharpening the mesh along with
+  the stonework. It costs 22–25% of the frame rate at the same Render Scale, and the crawl
+  fix is the same at 67% as at 100%, so there is no reason to raise Render Scale for it.
+  You can cycle the MetalFX row by hand, or set <code>r_metalfx 2</code> at the console.</p>
+
+  <p class="note">Two honest caveats. Anything that moves without
+  telling the scaler how — a rocket's <em>glow</em> sweeping across a floor that is not
+  itself moving, the <em>smoke</em> it leaves, blood and sparks — can leave a faint trail;
+  the rocket itself, and monsters, doors and lifts, report their own motion and should
+  not. <code>r_metalfx_reactive 3</code> (which <code>taa_on.cfg</code> sets) tells the
+  scaler to distrust its history exactly where moving light and particles land, and
+  measured against the scaler's own "forget everything" mode it removes nearly all of that
+  lingering; what is left is the temporal scaler rendering small bright puffs a touch
+  softer than bilinear does, which is a look and not a trail. And you lose the spatial
+  scaler's extra bite on the stonework. <code>r_metalfx 1</code> puts you back exactly
+  where you were; <code>exec taa_on.cfg</code> and <code>exec taa_off.cfg</code> switch
+  between the two without typing, and <code>r_metalfx_reactive_debug 1</code> shows you
+  what the scaler is being told (white = distrust).</p>
+
+  <p class="note">The ray-traced shadows have their own resolution knob and the two
+  multiply — at <code>r_viewscale 0.667</code> a <code>rt_metal_scale</code> of 0.375
+  traces at a quarter of the window. Raise <code>rt_metal_scale</code> if shadow edges read
+  soft under the scaler.</p>
+</section>
+
+<section id="replay">
+  <span class="kicker">XI &middot; Replay</span>
+  <h2>Watching it back</h2>
+  <p class="epigraph">Nothing in a demo is live, and it will still make you flinch.</p>
+
+  <p class="opener">The engine can be made to watch itself. Two ways: a showreel that
+  plays your own demos and switches the fork on one feature at a time, and a capture that
+  runs a demo far past any tier's settings, one fixed sixtieth of a second per frame, however
+  long each frame takes.</p>
+
+  <h3>The showreel</h3>
+  <p><code>exec showreel.cfg</code> at the console and sit back: about nineteen minutes,
+  no input, sound on, run it on Metal. It plays your own demos for their themes and adds the
+  fork's features one at a time, about every twenty-five seconds, in the order they were built
+  &mdash; the 1996 picture on e3m1, then the modern baseline, the red glow, the murk, the ground
+  fog, dust, ray-traced shadows, full wall lighting, ray-traced fog, bounce lighting, the
+  upscaler and HDR; then the fog in motion on e1m2 (the light pick, the 3D fog volume, the
+  handlamp); the lava on e1m7; the thunderbolt and the ball lightning on the start map; water on
+  e1m2 and in the Elder World (opaque, clear, murk inside, fading into fog, ray-traced light); the
+  lake on e1m4 (the mist band and the water as the fog's floor); the room reverb and the occlusion
+  low-pass on e2m4; and a finale that runs four action demos through <code>timedemo</code>, each at
+  the Stock tier and then at Best, with the engine's own fps line left on screen after each.
+  Every label sits <em>top-left</em> and the fps meter bottom-right, so nothing covers the
+  thing being shown. It ends by re-reading your config, so nothing it touched survives.
+  <code>exec showreel_ab.cfg</code> is the older four-minute reel that switches each feature
+  off and on against one scene.</p>
+
+  <h3>The cinematic capture</h3>
+  <p>A picture no tier can play, for a video. A capture does not run in real time: the engine
+  advances the demo a fixed sixtieth of a second per frame however long each frame takes, so
+  every history, every jitter and the fog's own clock run by the frame count and the result is
+  the same every time you run it. That lets the ray tracer be set far past any tier:
+  <code>exec cinematic.cfg</code> puts the trace at native resolution with 32 shadow rays a
+  pixel, the fog at a native buffer with 64 slices and a shadow cast in every one, the light
+  pick at two rays a cast, bounce lighting at full rate, and the upscaler at native (where it
+  is pure antialiasing), then sets the capture to 60 frames a second. Then:</p>
+  <pre>playdemo demo11
+cl_capturevideo 1</pre>
+  <p>In that order: starting a demo stops the one already playing (the attract demo counts),
+  and a demo stopping switches the capture off. The capture stops itself when the demo ends
+  and the file lands in your <code>m5/video/</code> folder. Ogg (Theora) is used when the
+  libraries are installed and a plain uncompressed AVI otherwise &mdash; large (about 180 MB
+  a second at 1080p60), so keep captures short or set <code>cl_capturevideo_width 1280</code>.
+  <strong>QuickTime will not open the raw AVI</strong> (it reads it and calls it
+  unplayable): hand the file over and it is converted to a QuickTime <code>.mov</code>
+  (HEVC, with the sound) with the fork's own converter (<code>test/avi2mov.swift</code>), or
+  let ffmpeg compress afterwards. <strong>Run <code>exec cinematic_off.cfg</code> (or click
+  your quality tier) before you quit</strong>: most of these are archived settings and would
+  otherwise be what your config saves. Sound is captured with the video. Two captures of the
+  same demo agree to the frame but not to the pixel: the dust, the particles and the
+  upscaler&rsquo;s history are random by design. If a cut needs two identical takes, add
+  <code>m5_dust 0</code>, <code>cl_particles 0</code> and <code>r_metalfx 1</code> for
+  both.</p>
+</section>
+
+<section id="sound">
+  <span class="kicker">XII &middot; Sound</span>
+  <h2>The room answers</h2>
+  <p class="epigraph">You hear the room before you see it.</p>
+
+  <p class="opener">Three things, built to one rule: Quake's samples are the sound. With
+  them off every sample plays exactly as it always has, to the bit; with them on the sample
+  stays the loudest thing you hear, and what is added is what the <em>room</em> does to it —
+  a crypt that rings, a door that muffles, a distance that dulls. Stereo only; music never
+  goes through any of them.</p>
+
+  <dl>
+    <dt>snd_reverb</dt>
+    <dd>On by default: every room has a voice. The engine looks around you ten times a frame
+    — up, down and eight ways along the floor — to see how big the space is and how much sky
+    it can find, and sets a reverb to match: a crypt rings for a couple of seconds, a
+    corridor is tight, open ground is nearly dry, cross-fading over half a second as you
+    walk through a door. Far sounds are wetter than near ones; your own gun sends a little.
+    <code>snd_reverb_wet</code> (0.15 — halved on your ear: &ldquo;a bit too glossy&rdquo; at
+    0.3) is the level and <code>snd_reverb_decay</code> (1) scales how long rooms ring.
+    <code>exec reverb_off.cfg</code> restores silence behind the samples.</dd>
+
+    <dt>snd_occlusion_lowpass</dt>
+    <dd>On by default: a sound that a wall is between you and is dulled, not only turned
+    down — so a Shambler behind a door reads as a muffled presence rather than as a distant
+    one. <code>snd_occlusion_cutoff</code> (1200 Hz) is how muffled.
+    <code>exec occlusion_lp_off.cfg</code> reverts.</dd>
+
+    <dt>snd_airabsorb</dt>
+    <dd>Off, for your ear: <code>exec airabsorb_on.cfg</code> takes the top end off
+    <em>far</em> sounds the way air does. Nothing within about three hundred units changes at
+    all, and from there a sound dulls gently with distance until, two thousand units out, an
+    explosion is the low thud you would hear across a valley. The value is the strength
+    (1 = the whole fall), <code>snd_airabsorb_dist</code> where it completes,
+    <code>snd_airabsorb_cutoff</code> how dull it gets. An outdoor map is the place to judge
+    it — e1m1's start with a fight in the distance, or the Arcane Dimensions hub.
+    <code>exec airabsorb_off.cfg</code> reverts.</dd>
+  </dl>
+
+  <h3>The soundtrack</h3>
+  <p>Drop the CD tracks in as <code>track02.ogg</code>, <code>track03.ogg</code> and so on
+  — either in <code>id1/music/</code> or <code>id1/sound/cdtracks/</code> inside your
+  DarkPlaces folder. Each map asks for its own track as it loads, so nothing needs typing:
+  music simply starts. To test one by hand the command is <code>cd play 2</code> — and it
+  must be <strong>2 or higher</strong>, because track 1 on a Quake CD is the game data, not
+  music. Volume is <code>bgmvolume</code>, separate from sound effects.</p>
+
+  <p class="note">If the music is silent while sound effects are fine, the Ogg decoder is
+  the thing to suspect rather than the files. The engine loads it at startup and says so —
+  look for <code>Loaded library "libvorbisfile.dylib"</code> near the top of the log. It
+  also looks in Homebrew's folder, so music no longer depends on how the game was
+  launched.</p>
+</section>
+
+<section id="start">
+  <span class="kicker">XIII &middot; Quick start</span>
+  <h2>If you change five things</h2>
+  <p class="epigraph">Five things, and then go down.</p>
+
+  <p class="opener"><code>rt_metal 1</code> and <code>r_volumetric 1</code> light up the two
+  big strands if your config does not already carry them. Set <strong>M5 Quality</strong> to
+  taste — Best is the reference look. Then, on the Volumetric Fog page, keep <em>Air
+  Density</em> low — around 0.2 — and let corner gathering do the work; fog that looks right
+  in a corridor is usually far too thick in a hall.</p>
+
+  <p>Switch on <em>Force Water Alpha</em> on the Effects and Particles page and set
+  <em>Water Alpha</em> below 1, or the water stays a sheet and nothing in its chapter can
+  reach it. The thunderbolt is on by default and has its own <strong>Options → Lightning
+  Gun</strong> page — <em>World Light</em> first, <em>Wildness</em> for its character — and
+  the ball is on key 9.</p>
+
+  <p>The menus were rationalised and then halved: every slider that survived was measured
+  to actually change the picture, and the rest went to the console (SETTINGS.md lists them
+  all). A <em>greyed</em> row means the setting will not change anything in your current
+  configuration — each page prints the reason at its foot, and a greyed row does not move
+  its setting at all. The old one-shot preset rows are gone — <strong>M5 Quality</strong> on
+  the Options page is the one preset, and it only touches performance.</p>
+
+  <p>On an HDR display, <code>r_edr 1</code> is the one switch for above-white highlights —
+  it sets up everything it needs itself. The Brightness chapter above has the detail.</p>
+</section>
+
+<section id="install">
+  <span class="kicker">XIV &middot; Another Mac</span>
+  <h2>Taking it with you</h2>
+  <p class="epigraph">It travels in two pieces, and neither is any use without the
+  other.</p>
+
+  <p class="opener">The game ships as two things that live side by side, in any folder you
+  like — inside <em>Applications</em>, in a <em>Games</em> folder, on an external disk:</p>
+
+  <pre><code>QuakeM5.app
+packs/id1/PAK0.PAK …
+packs/m5/ …            the mods
+packs/hipnotic/ …      and rogue, dopa, mg1, ad</code></pre>
+
+  <p><code>packs</code> holds the game data. The app looks for that folder next to itself,
+  so the pair can be moved anywhere together — but the app on its own will not find
+  anything to run. To add a mission pack later, drop its folder into <code>packs</code>;
+  to remove one, delete it and the menu simply lists it as absent.</p>
+
+  <p>To build the two zips, from the repo:</p>
+
+  <pre><code>sh release/make-release.sh</code></pre>
+
+  <p>That produces a small <code>QuakeM5-app-….zip</code> (a few megabytes, everything the
+  engine needs bundled inside — no Homebrew or other install required on the other
+  machine) and a large <code>QuakeM5-packs-….zip</code> holding the game data. They are
+  separate on purpose: the data rarely changes, so once it is on the other Mac only the
+  app zip needs sending again.</p>
+
+  <p class="note"><strong>First launch on a new Mac — do this before anything else.</strong>
+  macOS quarantines anything that arrives by download or AirDrop, and that causes
+  <em>both</em> failures you might see: the app refusing to open at all, or opening but
+  insisting "the required files were not found" while <code>packs</code> sits right beside
+  it. The second one is macOS secretly running a hidden copy of the app from a temp folder
+  (App Translocation), so it genuinely cannot see its neighbours — the app's own error
+  screen says so when it happens. One Terminal command fixes both, once: open Terminal,
+  paste <code>xattr -dr com.apple.quarantine </code> (with the trailing space), drag the
+  QuakeM5 app onto the Terminal window, press Enter. This is macOS being careful about an
+  app not signed by a paid developer account, not a fault in the build.</p>
+
+  <h3>Your settings come too</h3>
+
+  <p>The packs zip carries <code>packs/m5/config.cfg</code> — your settings — and a machine
+  that has never run the game adopts them as its defaults. The moment you quit, the game
+  writes <em>that machine's</em> settings to its own home folder instead, and from then on
+  the shipped copy is ignored. So it is a starting point, not a lock: to get back to it,
+  delete the local copy and start the game again.</p>
+
+  <p>To move just the config later, without rebuilding anything —
+  <strong>quit the game on both machines first</strong>, because it rewrites this file when
+  it exits and a copy pasted while it is running is lost on quit:</p>
+
+  <ol>
+    <li>In Finder press <strong>Shift-Command-G</strong> and paste
+        <code>~/Library/Application Support/darkplaces/m5</code></li>
+    <li>Copy <code>config.cfg</code></li>
+    <li>On the other Mac open the same folder the same way, and paste, replacing what is
+        there. If the game has never run on it, run it once and quit so the folder
+        exists.</li>
+  </ol>
+
+  <p class="note">Screen settings live in that file too — it asks for 1920×1080 exclusive
+  fullscreen. On a Mac whose display differs, set the resolution again in
+  <strong>Options → Video</strong>; everything else carries over untouched.</p>
+</section>
+
+<section id="limits">
+  <span class="kicker">XV &middot; Honestly</span>
+  <h2>What it does not do</h2>
+  <p class="epigraph">Light bounces once here and no further. Some things stay in the dark
+  because we have not yet found the way to them.</p>
+
+  <p class="opener">The ray tracer composites over a rasterised frame, and it is not a path
+  tracer. Light bounces <em>once</em> and no further: bounce lighting fills shadowed corners
+  with the colour of the room around them, but a second bounce, caustics and mirror
+  reflections are all outside what this does.</p>
+
+  <p>The water reflects nothing. A reflection was built — the room mirrored off the surface,
+  weighted the way real water weights it — and you decided against it, so the water refracts
+  and does not reflect, and that is a choice rather than a limit. The sun is an option, not a
+  default, and the fog beneath it takes no daylight yet. The plasma globe is drawn as a sphere
+  on Metal only; the GL path shows a knot of strands in its place.</p>
+
+  <p>The fog's baked map is 64 units per cell, so a ledge narrower than that can be missed.
+  Air fog carries no lighting of its own unless the ray-traced fog is on. The MetalFX
+  upscaler's temporal mode (<code>r_metalfx 2</code>, above) is off in a bare configuration
+  and selected by Better, Best and Ultimate; its known trails — a moving <em>light</em> on
+  still geometry and the particles of smoke, blood and sparks, neither of which any motion
+  vector can describe — are what the reactive mask (<code>r_metalfx_reactive</code>) is
+  for.</p>
+</section>
+
+<footer>
+  <p><strong>Credits.</strong> Quake © id Software. MetalQuake is built on the DarkPlaces
+  engine by LadyHavoc and contributors, GPL. Replacement textures: the
+  <a href="http://qrp.quakeone.com">Quake Revitalization Project</a> — hand-made between 2002
+  and 2016, used with credit as its licence asks. Replacement models: Authentic Model
+  Improvements, compiled by NightFright from work by many community authors, with several
+  models converted from the Quake remaster by MachineGames and Nightdive. The water surface
+  follows FTEQW's, measured against it running on this Mac; the ball lightning's gun is the
+  plasma gun from <em>Dissolution of Eternity</em>.</p>
+  <p>Fuller settings reference in <code>SETTINGS.md</code>; provenance and licences in
+  <code>docs/CONTENT.md</code>.</p>
+</footer>
+
+</main>
+
+</div>

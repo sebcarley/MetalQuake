@@ -1,0 +1,146 @@
+Change Log
+==========
+
+v1.6: Fixes inspired by "Scourge of Armagon" (hipnotic).
+Unreleased
+
+Game code fixes inspired by mission pack one "Scourge of Armagon" (hipnotic),
+released as v1.07.
+
+* Added directional gibs based on velocity of inflictor from qw2.30 GPL.
+* Added fish_die to support fish gib death.
+* Improved comment indenting and spacing for local variables.
+
+
+v1.5: Fixes inspired by "Quakec V1 01 Clean" by gnounc.
+19 July 2021
+
+Fixes inspired by a code review of "Quakec V1 01 Clean" by gnounc.
+https://gitlab.com/quakec-v1-01-clean/quakec-v1-01-clean
+
+* Updated code to use weapons constants instead of integers in comparisons.
+* Fix door unlock sound in door_fire.
+* Make fish not solid early in death sequence.
+* Don't switch weapon for backpack pickup when in water and pack has lightning gun.
+* Simplified T_Heal by removing reference to other.
+* Updated empty and null strings to initialize and compare to string_null.
+* Fix for double counting fish (rotfish) in total monsters for a level.
+* Set correct weapon number in weapon_grenadelauncher, weapon_rocketlauncher and
+  weapon_lightning and set correct weapon name in weapon_supershotgun and
+  weapon_nailgun.
+* Fixed minor formatting.
+* Fixed minor spelling errors.
+
+
+v1.4: Fix compiler warnings from fteqcc.
+16 July 2021
+
+Fixes all reasonable warnings reported by the fteqcc QuakeC compiler.
+
+* Fixed spelling error in trigger_changelevel.
+* Removed reference to the Dragon monster.
+* Removed reference to the Vomitus monster.
+* Fixed duplicate macro for shub shake.
+* Fixed duplicate macro for knight attack.
+* Removed unused global variable empty_float.
+* Updated oldone_pain to match expectations of th_pain.
+* Updated shalrath_pain to match expectations of th_pain.
+* Updated dog_pain to match expectations of th_pain.
+* Updated fd_secret_use to use an empty function to match expectations of th_pain.
+* Created wrapper function for fd_secret_use to match expectations of th_pain.
+* Updated definition of player_pain to match expectations of th_pain.
+
+
+v1.3: Removed unused code.
+15 July 2021
+
+Removed unused variables, files, and commented out code.
+
+* Removed unused variable from W_FireGrenade.
+* Removed unused local variable from ZombieFireGrenade.
+* Removed unused local variable from InitBodyQue.
+* Removed unused global variable hit_z from weapons.qc.
+* Removed unused local variable from SpawnMeatSpray, W_FireRocket,
+  W_FireSuperSpikes, W_FireSpikes, spike_touch, and superspike_touch.
+* Removed unused local variable from counter_use.
+* Removed unused global variables from triggers.qc.
+* Removed unused local variable from func_plat.
+* Removed unused local variable from OgreFireGrenade.
+* Removed unused local variables from monster_death_use and walkmonster_start_go.
+* Removed unused local variables from bubble_bob.
+* Removed unused local variables from health_touch, key_touch, sigil_touch, and
+  powerup_touch.
+* Removed unused local variable from ShamCheckAttack.
+* Removed unused local variable from DogCheckAttack.
+* Removed unused local variable from DemonCheckAttack.
+* Removed unused local variables in changelevel_touch, PlayerDeathThink,
+  PlayerJump, PlayerPreThink and PlayerPostThink.
+* Removed unused local variables in func_button.
+* Removed unused global variable current_yaw.
+* Removed unused local variables in ai_run and ai_walk.
+* Removed amtest.qc from the project.
+* Removed jctest.qc from the project.
+* Removed commented out source code.
+* Fixed minor source code indenting for consistency.
+
+
+v1.2: Fix compiler warnings from gmqcc.
+11 July 2021
+
+Fixes all reasonable warnings reported by the gmqcc QuakeC compiler.
+
+* Initialize variables in ClientObituary.
+* Initialize variable in W_ChangeWeapon.
+* Initialize variable in weapon_touch.
+* Initialize variables in armor_touch.
+* Fixed return type for WizardAttackFinished.
+* Updated FindIntermission to have a return value in failure case.
+* Fixed return type for SetMovedir.
+* Fixed local variable shadowing parameter in LaunchLaser.
+* Fixed missing parameter in call to ai_charge by ogre_smash12.
+* Fixed "allways" spelling error in comments.
+* Remove unused local variable shadowing parameter in SpawnMeatSpray.
+* Fixed missing return value in CheckAnyAttack.
+* Fixed missing return value in FindTarget.
+* Changed definition of droptofloor in defs.qc to match C code.
+* Added missing parameter in call to makestatic in func_illusionary.
+* Updated misc_fireball in misc.qc set fireball speed if not set.
+
+
+v1.1: All functionality from progs.dat v1.06.
+6 July 2021
+
+Changes were copied from the QW 2.30 GPL release wherever possible, otherwise
+changes were written from scratch inspired by the 1.06 release.
+
+* Removed progdefs.h (qc v1.06).
+* Updated ClientObituary in client.qc from qw2.30 GPL (qc v1.06).
+* Updated PlayerPreThink in client.qc from qw2.30 GPL (qc v1.06).
+* Removed commented out code in CheckRules client.qc (qc v1.06).
+* Updated NextLevel in client.qc from qw2.30 GPL (qc v1.06).
+* Deleted PrintClientScore and DumpScore in client.qc (qc v1.06).
+* Updated PutClientInServer in client.qc (qc v1.06).
+* Updated SelectSpawnPoint in client.qc from scratch (qc v1.06).
+* Updated changelevel_touch in client.qc from qw2.30 GPL (qc v1.06).
+* Updated SetNewParms in client.qc from qw2.30 GPL (qc v1.06).
+* Updated SetChangeParms in client.qc from qw2.30 GPL (qc v1.06).
+* Updated DropBackpack in items.qc from qw2.30 GPL (qc v1.06).
+* Updated BackpackTouch in items.qc from qw2.30 GPL (qc v1.06).
+* Reduce limit for maximum cells ammo_touch in items.qc qw2.30 GPL (qc v1.06).
+* Added secret die think function in doors.qc (qc v1.06).
+* Added pain function for old one in oldone.qc (qc v1.06).
+* Added CycleWeaponReverseCommand from qw2.30 GPL (qc v1.06).
+* Updated W_BestWeapon in weapons.qc from qw2.30 GPL (qc v1.06).
+* Updated W_FireLightning in weapons.qc from qw2.30 GPL (qc v1.06).
+* Updated W_FireRocket in weapons.qc from scratch (qc v1.06).
+* Updated W_FireAxe in weapons.qc from qw2.30 GPL (qc v1.06).
+* Removed /raid/quake/ from the model paths (qc v1.06).
+* Changed release to a .zip file.
+
+
+v1.0: Initial release.
+3 July 2021
+
+* Initial release of the project with GPL code v1.01 take from q1source.zip.
+  Compiled with qcc take from q1tools_gpl.tgz (e.g. the official GPL releases
+  from id Software).

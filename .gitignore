@@ -1,0 +1,100 @@
+obj/
+*.d
+*.o
+*.i
+*.s
+
+# MSVC build objects
+Debug-darkplaces-sdl2-vs*/
+Release-darkplaces-sdl2-vs*/
+*.obj
+*.tlog
+# MSVC NuGet packages, VS downloads them automatically.
+# Other platforms also provide SDL2 headers rather than storing old ones here.
+packages/
+
+ChangeLog
+darkplaces-agl
+darkplaces-glx
+darkplaces-sdl
+darkplaces-sdl-cmdtrace
+darkplaces-wasm.html
+darkplaces-wasm.js
+darkplaces-dedicated
+gmon.out
+*.ncb
+*.opt
+*.plg
+*.exe
+darkplaces_private.h
+darkplaces_private.rc
+Makefile.win
+*.dll
+*.dylib
+*.dSYM
+.vscode
+.theia
+*.code-workspace
+.ccls-cache
+*.gch
+/.vs
+/build
+/.cache
+*.kdev4
+*.vcxproj.user
+*.pdb
+*.lib
+*.exp
+
+# emscripten
+build-obj/
+emsdk/
+docs/output/
+wasm/preload/*
+!wasm/preload/runhere
+
+# ---- Local macOS / QuakeM5 Xcode setup ----
+# Personal Quake game data + music — never commit
+id1/
+# macOS Finder metadata
+.DS_Store
+# Xcode per-user state (the shared project + scheme are kept; only user cruft is ignored)
+xcuserdata/
+*.xcuserstate
+
+# M5 QuakeC mod: build artifacts and local tools.
+# /m5/* rather than /m5/ because git will not descend into an excluded
+# DIRECTORY, so the per-pack look files below could not be negated back in.
+/m5/*
+!/m5/m5pack_*.cfg
+# showreel.cfg is an INSTRUMENT, not a throwaway A/B recipe (the fixup.cfg
+# class stays ignored): it is the A-Z demo ramp, and a stage of it that stops
+# changing the picture is a regression. It has to survive.
+!/m5/showreel.cfg
+!/m5/showreel_ab.cfg
+!/m5/showreel_check.cfg
+!/m5/effectinfo.txt
+/tools/
+/qc/*.lno
+
+# Personal Quake game data — the Steam install and the mission-pack gamedirs
+# built from it. The id-pack gamedirs hold nothing but symlinks into
+# steamQuakecommon, so they cost no disk; ad/ holds Arcane Dimensions' real
+# paks (not a Steam product, provenance in docs/CONTENT.md); none of it may
+# ever be committed.
+/steamQuakecommon/
+/hipnotic/
+/rogue/
+/dopa/
+/mg1/
+/ad/
+/ctf/
+__pycache__/
+/test/perf/out*/
+
+# Release builds: a self-contained .app plus the packs folder (game data).
+# Never committed -- the app is a build artefact and packs is Seb's own Quake data.
+/release/out/
+
+# FTEQW source, kept beside the tree for reference only (2026-09-12 survey): never ours to commit
+/release/public/

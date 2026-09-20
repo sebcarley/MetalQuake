@@ -1,0 +1,803 @@
+// m5/effectinfo.txt -- SEPTEMBER S5. Explosions and teleports.
+//
+// PARTIAL FILE BY DESIGN. CL_NewParticlesFromEffectinfo falls through to the
+// hardcoded CL_ParticleEffect_Fallback for any effect NOT named here, so every
+// effect this file does not mention keeps working exactly as it did.
+//
+// BUT THE FALLBACK IS ALL-OR-NOTHING PER NAME. `found = true` is set the moment
+// any block names an effect (cl_particles.c:1671) -- BEFORE the underwater
+// filter -- so naming TE_EXPLOSION deletes ALL FOUR of its hardcoded outputs at
+// once: the decal, the dlight, the lightmap stain and the 512 sparks. Every one
+// has to be re-supplied below or knowingly written off. See the stain note.
+//
+// FIVE RULES THIS FILE OBEYS, each of which is a silent failure if broken:
+//
+//  1. A WRONG-ARITY LINE ABORTS PARSING OF THE WHOLE REST OF THE FILE.
+//     checkparms(n) ends in `break;` and the only enclosing loop is the LINE
+//     loop, so one bad line prints one console message and every block below it
+//     never exists. `size` takes 2 arguments, not 3 (sizeincrease is separate);
+//     `alpha` exactly 3; `rotate` exactly 4; underwater/notunderwater must be
+//     ALONE on their line.
+//  2. `type` MUST BE THE FIRST LINE OF A BLOCK -- its handler overwrites both
+//     blend and orientation, so a `blend` written above it is discarded.
+//  3. `type smoke` IS ADDITIVE. Dark smoke on it adds almost nothing and can
+//     never occlude, which is the exact complaint this file exists to fix.
+//     `blend alpha` AFTER `type smoke` is the whole cure. `blend refract`
+//     (BEAUTY A5) makes the layer displace the frame behind it by its own
+//     coverage -- for a ring cell, a shockwave; the layer is never spawned
+//     while cl_particles_refract is 0.
+//  4. TEXTURE CELLS. This engine writes art into 0-32, 34 and 60-63 ONLY (the
+//     setuptex calls in cl_particles.c; 34 is the M5 shotgun shell casing,
+//     SEPTEMBER S6). Cells 33 and 35-59 are memset to opaque WHITE -- 33 on
+//     purpose, it is the GLQuake square particle -- so a stray index draws a
+//     solid white square; and an index >= 64 WRAPS modulo 64 rather than
+//     erroring. 35 is a crisp white disc (m5_dust), 36 a thin ring (the
+//     shockwave), 37 the muzzle FLASH (a starburst), 38 the SPARK STREAK (a
+//     thin hot line along the stretch axis -- for `type spark` layers), 39 the
+//     EMBER (a hard bright bead with a rim), 40 the blood DROPLET (inverted, for
+//     `type blood` only). Usable here: 0-7 smoke puffs, 8-15 bullet decals, 34 a
+//     brass hull, 36 ring, 37 flash, 38 streak, 39 ember, 62 bubble, 63 the
+//     plain dot. cl_particles_texsize 256 makes every one of them sixteen times
+//     finer without touching this file. BEAUTY A2, 2026-09-16: the spark and
+//     ember layers below moved from 63 to 38 and 39; put 63 back for the blob.
+//     DO NOT copy texture indices out of another mod's effectinfo -- they point
+//     into that mod's own particlefont atlas, not this one.
+//  5. NEVER define `effect SVC_PARTICLE`. Naming it kills the fallback that
+//     carries the legacy particle() builtin's count-1024 explosion reroute and
+//     the blood hack, in every mod and mission pack.
+//
+// DELAY (engine keyword added 2026-09-02, SEPTEMBER S5): `delay min max`,
+//     seconds after the effect fires before the layer's particles appear --
+//     no physics, no fade, no draw until then; lifetime and spin start at the
+//     delayed moment. What lets the smoke rise AFTER the flash. Two args.
+// COUNTS: `count` is multiplied by cl_particles_quality (Seb runs 3);
+// `countabsolute` is NOT. Anything whose brightness must not change with the
+// quality setting -- the flash, the fireball core -- uses countabsolute.
+//
+// Iterate without a rebuild: `cl_particles_reloadeffects` in the console.
+
+
+// ===========================================================================
+// TE_EXPLOSION -- rockets, grenades, Ogre grenades, Vore balls, barrels.
+// Quality-3 total: 1 decal + 182 particles, against 1536 sparks today (the 182nd is the refracting shockwave twin, spawned only with cl_particles_refract on).
+// (test/docsync.py re-derives that sum from the blocks below and fails the build
+// if this line disagrees -- keep the "1 decal + N particles" phrasing. The first
+// version of this line said 161: it had dropped L5 COOL SMOKE from the sum, and
+// two documents copied the wrong number before anyone re-added it.)
+// ===========================================================================
+
+// L1 SCORCH. No water flag -- a scorch mark is wanted either way.
+// originjitter[0] is the trace SEARCH RADIUS here, not a jitter: at the default
+// 0 the rays are zero-length and NO DECAL SPAWNS AT ALL. The engine's own use
+// is 40. The decal path ignores count/countabsolute and originoffset.
+effect TE_EXPLOSION
+countabsolute 1
+type decal
+tex 8 16
+size 32 48
+alpha 128 192 0
+color 0xFFFFFF 0xFFFFFF
+originjitter 48 0 0
+
+// L2 BANG -- the flash. Seb's second look (2026-09-02): "needs a violent flash
+// and shockwave, not just the softish orange rays". Three layers now, all
+// countabsolute so quality cannot stack them into a white disc.
+// L2a the blink: a white core that is gone in a tenth of a second.
+effect TE_EXPLOSION
+notunderwater
+type static
+countabsolute 1
+tex 63 63
+size 70 70
+sizeincrease 900
+alpha 300 300 3000
+color 0xFFFFFF 0xFFFFFF
+// L2b the bang proper: bigger, whiter and faster than the first cut.
+effect TE_EXPLOSION
+notunderwater
+type static
+countabsolute 1
+tex 63 63
+size 40 40
+sizeincrease 420
+alpha 320 320 1400
+color 0xFFFFF0 0xFFE0A0
+// L2c the SHOCKWAVE: procedural cell 36 (a thin ring), additive, expanding to
+// ~200 units in a fifth of a second. A billboard ring reads as a wave from any
+// angle; TE_EXPLOSION carries no surface normal to lie a disc on.
+effect TE_EXPLOSION
+notunderwater
+type static
+countabsolute 1
+tex 36 37
+size 24 24
+sizeincrease 800
+alpha 240 240 1100
+color 0xFFE8C8 0xFFD0A0
+// L2c' the shockwave's REFRACTING twin (BEAUTY A5, 2026-09-16): the same ring,
+// `blend refract` -- the frame behind it is displaced outward by its coverage
+// (cl_particles_refract pixels at full), so the air bends as the wave passes.
+// Spawned only while cl_particles_refract is above 0, before any random draw.
+effect TE_EXPLOSION
+notunderwater
+type static
+blend refract
+countabsolute 1
+tex 36 37
+size 24 24
+sizeincrease 800
+alpha 255 255 1100
+color 0xFFFFFF 0xFFFFFF
+// L2d the flash's own LIGHT: big and brief, on top of L8's steady one, so the
+// room blinks -- under rt_metal it casts a shadow and lights the murk.
+effect TE_EXPLOSION
+notunderwater
+lightradius 650
+lightradiusfade 5400
+lighttime 0.12
+lightcolor 5 4.5 3.5
+
+// L3 FIREBALL -- the layer that replaces progs/s_explod.spr. Ten noisy puffs
+// rather than one smooth ball, so it has structure at close range. Lifetime is
+// matched to the sprite's own 0.6 s.
+effect TE_EXPLOSION
+notunderwater
+type static
+countabsolute 10
+tex 0 8
+size 12 20
+sizeincrease 40
+alpha 208 272 448
+color 0xFFB030 0xFF3800
+gravity -0.06
+airfriction 3.5
+originjitter 10 10 10
+velocityjitter 70 70 70
+rotate 0 360 -60 60
+
+// L4 HOT SMOKE -- warm brown, close in, rising fast. Third look (2026-09-02):
+// "less dense, less opaque", and hot and cool read as one black plume -- so
+// hot is a lit tan-brown at ~60% of its old alpha, cool a mid grey at ~65%. There is no smoke on
+// a Quake explosion today at all; this and L5 are the headline. Second look:
+// it obscured the explosion, so it now appears AFTER the flash (`delay`, an
+// engine keyword added for exactly this), thinner, and rolling four times
+// harder. Seb's second look: "try 100 ms", then "delay a little more, try
+// 300 ms" -- 250-350 ms, a small spread so it does not arrive as one sheet.
+// THIS IS THE HANDLE: edit these two numbers and type cl_particles_reloadeffects.
+effect TE_EXPLOSION
+notunderwater
+type smoke
+blend alpha
+count 10
+tex 0 8
+size 12 20
+sizeincrease 34
+alpha 52 88 48
+color 0x9A5A30 0x5A3418
+gravity -0.10
+airfriction 1.2
+originoffset 0 0 8
+originjitter 14 14 20
+velocityoffset 0 0 24
+velocityjitter 46 46 34
+rotate 0 360 -90 90
+delay 0.25 0.35
+
+// L5 COOL SMOKE -- the slower grey plume that outlives the fire. A beat behind
+// the hot smoke (400-550 ms) so the fireball is seen first; boils rather than
+// slides (spin +-45, growing faster).
+effect TE_EXPLOSION
+notunderwater
+type smoke
+blend alpha
+count 10
+tex 0 8
+size 16 28
+sizeincrease 30
+alpha 36 66 26
+color 0x585858 0x7A7268
+gravity -0.16
+airfriction 0.7
+originoffset 0 0 16
+originjitter 18 18 24
+velocityoffset 0 0 14
+velocityjitter 26 26 22
+rotate 0 360 -45 45
+delay 0.40 0.55
+
+// L6 EMBERS -- slow, gravity-fed and BOUNCING, which today's sparks are not.
+// bounce needs cl_particles_collisions 1 (the default).
+effect TE_EXPLOSION
+notunderwater
+type spark
+count 12
+tex 39 39
+size 1.6 2.6
+sizeincrease -0.5
+alpha 256 320 220
+color 0xFFB040 0xC03000
+gravity 0.55
+airfriction 0.9
+bounce 1.4
+liquidfriction 6
+stretchfactor 0.7
+originjitter 6 6 6
+velocityjitter 190 190 210
+
+// L7 FAST SPARKS -- 72 at quality 3 against today's 1536, and none of them
+// costs a traceline at spawn. They live 0.3 s and airfriction kills their
+// reach, so bounce 0 (passing through walls) is not visible.
+effect TE_EXPLOSION
+notunderwater
+type spark
+count 24
+tex 38 38
+size 0.8 1.4
+alpha 256 320 900
+color 0xFFF0A0 0xFF9020
+gravity 0.18
+airfriction 2.6
+stretchfactor 2.2
+velocityjitter 380 380 380
+
+// L8 LIGHT -- EXACTLY today's numbers (cl_particles.c:1255), so the light is
+// provably unchanged and only the particles are on trial. lightshadow defaults
+// to 1, and in this fork a dlight reaches the RT sidecar's light list, so it
+// casts RT shadows and lights the murk -- which is today's behaviour too.
+effect TE_EXPLOSION
+notunderwater
+lightradius 350
+lightradiusfade 700
+lighttime 0.5
+lightcolor 4 2 0.5
+
+// L9/L10 UNDERWATER. `underwater` tests WATER|SLIME only -- lava is not
+// "underwater", so a lava explosion takes the notunderwater set above.
+effect TE_EXPLOSION
+underwater
+type bubble
+count 20
+tex 62 62
+size 1.5 3.5
+alpha 160 255 128
+color 0x404040 0x808080
+gravity -0.125
+bounce 1.5
+liquidfriction 0.25
+originjitter 16 16 16
+velocityjitter 96 96 96
+
+effect TE_EXPLOSION
+underwater
+lightradius 300
+lightradiusfade 700
+lighttime 0.4
+lightcolor 1.6 2.2 2.6
+
+
+// ===========================================================================
+// TE_TAREXPLOSION -- the tarbaby's suicide (qc/tarbaby.qc). Authored because
+// overriding TE_EXPLOSION alone would leave a tarbaby looking like 1996 next
+// to a rocket. Same ten layers, violet.
+// ===========================================================================
+
+effect TE_TAREXPLOSION
+countabsolute 1
+type decal
+tex 8 16
+size 28 40
+alpha 112 168 0
+color 0xFFFFFF 0xFFFFFF
+originjitter 48 0 0
+
+effect TE_TAREXPLOSION
+notunderwater
+type static
+countabsolute 1
+tex 63 63
+size 24 24
+sizeincrease 170
+alpha 288 288 1200
+color 0xE8D0FF 0xC060FF
+
+effect TE_TAREXPLOSION
+notunderwater
+type static
+countabsolute 10
+tex 0 8
+size 11 18
+sizeincrease 36
+alpha 208 272 448
+color 0xC060FF 0x5010A0
+gravity -0.06
+airfriction 3.5
+originjitter 10 10 10
+velocityjitter 70 70 70
+rotate 0 360 -60 60
+
+effect TE_TAREXPLOSION
+notunderwater
+type smoke
+blend alpha
+count 14
+tex 0 8
+size 14 22
+sizeincrease 26
+alpha 96 160 64
+color 0x241830 0x120C18
+gravity -0.10
+airfriction 1.2
+originoffset 0 0 8
+originjitter 14 14 20
+velocityjitter 46 46 34
+rotate 0 360 -22 22
+
+effect TE_TAREXPLOSION
+notunderwater
+type smoke
+blend alpha
+count 10
+tex 0 8
+size 18 30
+sizeincrease 20
+alpha 64 112 36
+color 0x201828 0x484058
+gravity -0.16
+airfriction 0.7
+originoffset 0 0 16
+originjitter 18 18 24
+velocityjitter 26 26 22
+rotate 0 360 -12 12
+
+effect TE_TAREXPLOSION
+notunderwater
+type spark
+count 12
+tex 63 63
+size 1.6 2.6
+sizeincrease -0.5
+alpha 256 320 220
+color 0xE0A0FF 0x8020C0
+gravity 0.55
+airfriction 0.9
+bounce 1.4
+liquidfriction 6
+stretchfactor 0.7
+originjitter 6 6 6
+velocityjitter 190 190 210
+
+effect TE_TAREXPLOSION
+notunderwater
+type spark
+count 24
+tex 63 63
+size 0.8 1.4
+alpha 256 320 900
+color 0xF0E0FF 0xA040E0
+gravity 0.18
+airfriction 2.6
+stretchfactor 2.2
+velocityjitter 380 380 380
+
+effect TE_TAREXPLOSION
+notunderwater
+lightradius 600
+lightradiusfade 1200
+lighttime 0.5
+lightcolor 1.6 0.8 2.0
+
+effect TE_TAREXPLOSION
+underwater
+type bubble
+count 20
+tex 62 62
+size 1.5 3.5
+alpha 160 255 128
+color 0x404040 0x808080
+gravity -0.125
+bounce 1.5
+liquidfriction 0.25
+originjitter 16 16 16
+velocityjitter 96 96 96
+
+effect TE_TAREXPLOSION
+underwater
+lightradius 500
+lightradiusfade 1200
+lighttime 0.4
+lightcolor 1.2 0.8 2.2
+
+
+// ===========================================================================
+// TE_TELEPORT -- every teleport, every player respawn, every teleporter touch,
+// and THREE sites in the horde spawner (qc/m5horde.qc). Today it is 3168 grey
+// dots at cl_particles_quality 3; this is 145. The horde win is as big as the
+// look fix.
+// ===========================================================================
+
+effect TE_TELEPORT
+lightradius 200
+lightradiusfade 500
+lighttime 0.4
+lightcolor 2 2 2.6
+
+// The implosion pop.
+effect TE_TELEPORT
+type static
+countabsolute 1
+tex 63 63
+size 24 24
+sizeincrease 130
+alpha 256 256 900
+color 0xC8D8FF 0x8090FF
+
+// The starfield replacement: streaks rather than dots.
+effect TE_TELEPORT
+type spark
+count 26
+tex 63 63
+size 0.9 1.6
+alpha 224 288 380
+color 0x3050A0 0xC0D0FF
+gravity 0.03
+airfriction 1.8
+stretchfactor 5
+originjitter 10 10 20
+velocityjitter 180 180 240
+
+// A few motes that outlive the streaks. alphastatic has no cl_particles_* gate.
+effect TE_TELEPORT
+type alphastatic
+count 14
+tex 63 63
+size 0.6 1.4
+sizeincrease 2.5
+alpha 192 288 200
+color 0x8898C0 0xE8F0FF
+gravity -0.02
+airfriction 0.6
+originjitter 14 14 24
+velocityjitter 40 40 70
+
+effect TE_TELEPORT
+notunderwater
+type smoke
+blend alpha
+count 8
+tex 0 8
+size 8 14
+sizeincrease 16
+alpha 48 96 48
+color 0x303848 0x606880
+gravity -0.06
+airfriction 1
+originoffset 0 0 8
+originjitter 12 12 18
+velocityjitter 22 22 18
+rotate 0 360 -20 20
+
+// ============================================================================
+// M5 BALL LIGHTNING (BALLLIGHTNING.md slice 3, 2026-09-06). Two CUSTOM names,
+// neither an engine effect, so there is no fallback to preserve and no
+// underwater filter to worry about. The QuakeC (qc/m5ball.qc) looks both up
+// once per map with particleeffectnum and prints the handles under developer 1.
+//
+// m5ball_glow: the comet behind the ball. A TRAIL effect -- it rides the entity
+// through .traileffectnum, so particles are laid along the ball's MOVEMENT
+// (trailspacing units apart) and a hovering ball leaves none; the body of the
+// ball is the plasma knot the engine draws, not this. Additive, short-lived,
+// shrinking, in the bolt's blue-white.
+// A FAINT VIOLET HAZE behind the ball (Seb's third look, 2026-09-06: the
+// reference image overrules the white blob -- "faint haze"). The body of the
+// ball is the shell the engine draws; this only smears a little colour behind
+// it as it moves. Additive, low alpha, in the palette's violet.
+effect m5ball_glow
+type static
+blend add
+trailspacing 8
+tex 63 63
+size 14 20
+sizeincrease -10
+alpha 28 40 220
+color 0x5030c0 0x7050ff
+velocityjitter 4 4 4
+airfriction 2
+
+// m5ball_burst: the discharge, fired by pointparticles at the ball's position.
+// A blink (also the 0.15 s flash light -- the blue-white twin of the explosion's
+// lightcolor line), a shockwave ring on cell 36 (S5's), and a spray of sparks.
+effect m5ball_burst
+type static
+countabsolute 1
+tex 63 63
+size 60 60
+sizeincrease 700
+alpha 300 300 2600
+color 0xe0f0ff 0xffffff
+lightradius 400
+lightradiusfade 2600
+lighttime 0.15
+lightcolor 1.5 2.5 5
+
+// The shockwave shell: toned down 2026-09-06 on Seb's word ("too prominent for
+// this effect") -- half the alpha, a smaller ring that grows slower and dies
+// faster, in the filaments' violet rather than pale blue.
+effect m5ball_burst
+type static
+countabsolute 1
+tex 36 37
+size 12 12
+sizeincrease 500
+alpha 110 110 1500
+color 0x8060ff 0x6040c0
+
+// and its refracting twin (BEAUTY A5), see the explosion's
+effect m5ball_burst
+type static
+blend refract
+countabsolute 1
+tex 36 37
+size 12 12
+sizeincrease 500
+alpha 255 255 1500
+color 0xFFFFFF 0xFFFFFF
+
+effect m5ball_burst
+type spark
+countabsolute 40
+tex 38 38
+size 2 3
+alpha 200 255 900
+color 0x80a0ff 0xffffff
+velocityjitter 360 360 360
+gravity 0.5
+airfriction 1
+
+// m5ball_fizzle: a ball EARTHING on a wall (Seb's tenth look: not a flicker
+// out -- "it needs to expend its energy somehow, like a final arc to earth and
+// a pop"). The QuakeC throws the final arc to the surface itself; this is the
+// spray of sparks at the spot and the scorch it leaves, with the pop a sound.
+effect m5ball_fizzle
+type decal
+countabsolute 1
+tex 8 16
+size 20 28
+alpha 160 220 0
+color 0x201828 0x100818
+originjitter 40 0 0
+
+effect m5ball_fizzle
+type spark
+countabsolute 40
+tex 38 38
+size 1.5 2.5
+alpha 180 255 700
+color 0x8060ff 0xd0c0ff
+velocityjitter 140 140 140
+gravity 0.8
+airfriction 2
+
+// BEAUTY A6 (2026-09-16): the scorch GLOWS and cools. An additive oriented
+// particle laid on the surface's own normal (the base velocity, which the
+// QuakeC and the bolt renderer now pass; `raindecal` is the engine's own
+// surface-lying type, with the normal as a 1 u/s drift that never shows),
+// bright orange at the moment of the strike and gone in three seconds.
+// Spawned only while cl_particles_scorchglow is on -- `requirecvar`, an
+// engine keyword added for this, decided before any random draw.
+effect m5ball_fizzle
+type raindecal
+requirecvar cl_particles_scorchglow
+orientation oriented
+blend add
+countabsolute 1
+tex 63 63
+size 22 28
+sizeincrease -4
+alpha 220 260 80
+color 0xff7020 0xff9040
+velocitymultiplier 1
+
+// m5ball_ground: where a grounding arc lands -- a small dark scorch and a
+// few sparks. Fired CLIENT-side by the bolt renderer (CL_Beam_M5_AddBall), so
+// it costs no network traffic; the decal needs originjitter (the trace
+// radius -- rule at the top of this file).
+effect m5ball_ground
+type decal
+countabsolute 1
+tex 8 16
+size 6 10
+alpha 160 200 0
+color 0x303040 0x202030
+originjitter 12 0 0
+
+effect m5ball_ground
+type raindecal
+requirecvar cl_particles_scorchglow
+orientation oriented
+blend add
+countabsolute 1
+tex 63 63
+size 8 12
+sizeincrease -2
+alpha 200 240 90
+color 0xff7020 0xff9040
+velocitymultiplier 1
+
+effect m5ball_ground
+type spark
+countabsolute 6
+tex 38 38
+size 1 2
+alpha 200 255 900
+color 0x9080ff 0xe0e0ff
+velocityjitter 90 90 90
+gravity 0.7
+airfriction 2
+
+// the discharge's scorch: a big dark ring burnt into the surface it dies on
+effect m5ball_burst
+type decal
+countabsolute 1
+tex 8 16
+size 40 56
+alpha 160 220 0
+color 0x201828 0x100818
+originjitter 48 0 0
+
+// m5ball_shatter: a DIRECT HIT -- the globe disintegrating on whatever it
+// struck. A hard white-violet flash with its own light, a wide ring, and a
+// storm of long violet sparks thrown outward; the shell itself is blown apart
+// by the engine (frame 4) over the same quarter second.
+effect m5ball_shatter
+type static
+countabsolute 1
+tex 63 63
+size 110 110
+sizeincrease 1400
+alpha 500 500 1800
+color 0xffffff 0xffffff
+lightradius 700
+lightradiusfade 2200
+lighttime 0.3
+lightcolor 5 3.5 8
+
+effect m5ball_shatter
+type static
+countabsolute 1
+tex 36 37
+size 24 24
+sizeincrease 1100
+alpha 200 200 1000
+color 0xa080ff 0x6040c0
+
+effect m5ball_shatter
+type spark
+countabsolute 160
+tex 38 38
+size 2 5
+alpha 220 255 500
+color 0x8060ff 0xffffff
+velocityjitter 700 700 700
+gravity 0.4
+airfriction 1
+
+// and the scorch it leaves on the floor
+effect m5ball_shatter
+type decal
+countabsolute 1
+tex 8 16
+size 48 64
+alpha 180 240 0
+color 0x201828 0x100818
+originjitter 64 0 0
+
+// ---------------------------------------------------------------------------
+// SEPTEMBER2 Part G (2026-09-10): weapon feel. Both are opt-in through the m5
+// QuakeC (m5feel.qc) -- m5_nailtracer sets .traileffectnum on a player's nail,
+// m5_axesparks fires the sparks with pointparticles -- so at the cvars' 0 these
+// blocks are never referenced.
+
+// m5nail_trail: a short hot streak behind your own nails and super nails. Additive
+// (a tracer is emissive), tiny, and gone in a tenth of a second, so it reads as a
+// streak rather than a comet; the murk fades it by distance like any particle.
+effect m5nail_trail
+type static
+blend add
+trailspacing 5
+tex 63 63
+size 1.6 2.2
+sizeincrease -8
+alpha 160 230 2200
+color 0xffc880 0xfff0d0
+velocitymultiplier 0.02
+
+// and the axe's mark (BEAUTY A6): the base velocity is the normal x 140 here,
+// so the glow's multiplier takes it back to a 1 u/s drift
+effect m5axe_sparks
+type raindecal
+requirecvar cl_particles_scorchglow
+orientation oriented
+blend add
+countabsolute 1
+tex 63 63
+size 6 9
+sizeincrease -1.5
+alpha 160 200 110
+color 0xff8030 0xffa050
+velocitymultiplier 0.007
+
+// m5axe_sparks: an axe blow on a wall -- a spray of hot sparks off the surface
+// (the base velocity is the wall's normal x 140, from the QuakeC), a few embers
+// that fall, and a blink of warm light.
+effect m5axe_sparks
+type spark
+countabsolute 14
+tex 38 38
+size 0.8 1.6
+alpha 220 255 1400
+color 0xffd070 0xffffff
+velocityjitter 130 130 130
+velocitymultiplier 1
+gravity 1
+airfriction 1.5
+
+effect m5axe_sparks
+type spark
+countabsolute 4
+tex 39 39
+size 1 1.8
+alpha 200 255 500
+color 0xff9040 0xffd090
+velocityjitter 60 60 60
+velocitymultiplier 0.6
+gravity 1
+airfriction 2
+bounce 1.2
+
+effect m5axe_sparks
+type static
+countabsolute 1
+tex 63 63
+size 6 6
+alpha 120 120 2400
+color 0xffe0b0 0xffffff
+lightradius 70
+lightradiusfade 1200
+lighttime 0.06
+lightcolor 1.6 1.3 0.7
+
+// ---------------------------------------------------------------------------
+// BALL LIGHTNING, 2026-09-10 (Seb: "the filaments and sparks that emanate must be
+// erupting as an extension of the ball, not merely stuck on").
+
+// m5ball_erupt: fired CLIENT-side by the bolt renderer (CL_Beam_M5_AddBall) once
+// per roll at every volcanic eruption on the shell, with the eruption's own
+// outward direction as the base velocity -- a few sparks thrown off the tip, so
+// what leaves the ball visibly came out of it.
+effect m5ball_erupt
+type spark
+countabsolute 4
+tex 38 38
+size 0.9 1.6
+alpha 200 255 1300
+color 0x9070ff 0xffffff
+velocityjitter 70 70 70
+velocitymultiplier 1
+gravity 0.25
+airfriction 1.2
+
+// and the shell itself sheds sparks as it flies: a spark trail flung outward from
+// inside the globe (the originjitter is most of the shell's radius), so the ball
+// trails a scatter of embers leaving its surface rather than a clean comet.
+effect m5ball_glow
+type spark
+trailspacing 12
+tex 38 38
+size 1 1.7
+alpha 180 255 1100
+color 0x8060ff 0xe8e0ff
+originjitter 14 14 14
+velocityjitter 130 130 130
+velocitymultiplier 0.05
+gravity 0.2
+airfriction 1.5

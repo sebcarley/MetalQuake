@@ -1,0 +1,38 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww23560\viewh14060\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 tweaks and requests. plan for these. \
+-need better explosions. Finds some and implement for rockets/grenades/bombcrates. Are there any we can rob from the packs? If not, any online? let\'92s move away from the sprite based xplozn, to something that looks real.\
+\
+-Work to do on particles generally? visuals + performance Dust? swirling dust picking up lights? \
+\
+- bright corridor in e1m2 to investigate with demo frames. Why is this, and how to resolve. Seems to be that some of the torches light a lot brighter than others. \
+\
+- A bit of fizz on the lightning gun beams - like real lightning. the main beam is a touch too smooth. if we can make some crackle obvious in the main beam it could look good. this fizz should be rapid, like the lava shimmer\
+\
+-we don\'92t have proper shells being ejected from the shotgun - just a little orange blob. Again, anything to rob from packs?\
+\
+-teleporter swirls move twice as fast as they should (e.g. in start map), and is there not a nicer type of teleporter starfield effect? not the slipgates - they\'92re fine.\
+\
+-torch needs to be more a cone less a disc, and move around 50% less, and dim more often.\
+\
+-build a Play back selection of the demos e.g. demo11 and others we\'92ve been using, but cycling through the effects we have added from stock quake all the way through dense fog, RT, and murk. so we can see not so much A/B as A-Z in realtime in one demo run \
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 All metal, and all work from now should be metal - tell me you agree?\
+Why does the GL even run? (
+\f1\fs26 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Stopping render module "R_Shadow"\
+\pard\pardeftab720\partightenfactor0
+\cf0 Stopping render module "GL_Draw"\
+Stopping render module "GL_Main"\
+Stopping render module "R_Textures"\
+Stopping render module "GL_Backend"\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 ) Does that not sap performance? Can we retire it? I have a suspicion we can optimise by switching off duplication or stuff we\'92re not using \
+}
