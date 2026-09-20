@@ -402,10 +402,19 @@ Your settings are saved to
     ~/Library/Application Support/darkplaces/m5/config.cfg
 the first time you quit. Delete that file to return to the shipped defaults.
 
-The field guide and the manual: see the GitHub page.
+Read this first
+---------------
+docs/GUIDE.html   the field guide -- what the game does now, and why it looks as it does
+docs/MANUAL.html  the manual -- every feature, setting and console command
+Double-click either; they open in your browser and need no internet.
 TXT
 	cp "$OUT/README.txt" "$OUT/packs/README.txt"
 	cp "$REPO/COPYING" "$OUT/COPYING.txt" 2>/dev/null || true
+	# the field guide and the manual travel with the download: both are single
+	# self-contained pages, so a double-click reads them offline
+	mkdir -p "$OUT/docs"
+	cp "$REPO/docs/GUIDE.html" "$REPO/docs/MANUAL.html" "$OUT/docs/"
+	grep -lE "/Users/|@outlook\." "$OUT/docs"/*.html && { echo "FAIL: a doc carries a personal path"; exit 1; } || true
 
 	echo "== PUBLIC assertions"
 	BAD=$(find "$OUT/packs" -type f \( -iname '*.pak' -o -iname '*.pk3' -o -iname '*.mdl' \
