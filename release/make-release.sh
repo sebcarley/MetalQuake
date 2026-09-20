@@ -438,7 +438,8 @@ TXT
 		# one top-level item (the MetalQuake folder), ditto so the signature survives
 		( cd "$(dirname "$OUT")" && ditto -c -k --norsrc --noextattr --keepParent MetalQuake "$(basename "$PUBZIP")" )
 		echo "== public zip: $(du -h "$PUBZIP" | cut -f1)  $PUBZIP"
-		shasum -a 256 "$PUBZIP" | tee "$PUBZIP.sha256"
+		# from inside the folder, so the file names the zip and not this machine's path
+		( cd "$(dirname "$PUBZIP")" && shasum -a 256 "$(basename "$PUBZIP")" | tee "$(basename "$PUBZIP").sha256" )
 	fi
 	echo "== done (PUBLIC). Nothing has been uploaded anywhere."
 	exit 0
