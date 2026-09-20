@@ -93,6 +93,23 @@ with `id1/` beside the binary. `METAL.md` is the renderer's design record; `test
 indexes the instruments (GL-vs-Metal pixel parity, the GL call-stream digest, the perf
 sweep).
 
+### What is ours and what is upstream
+
+This is DarkPlaces with a fork on top, and most of the tree is DarkPlaces.
+
+- **New files:** the Metal renderer and the ray tracer (`metal_backend.m`,
+  `metal_textures.m`, `metal_fx.m`, `vid_metal.m`, `rt_metal.m`, `shader_msl.h`,
+  `shader_density.h`, `rt_bluenoise.h`), the call-stream tracer (`dpcmdtrace.*`), the game
+  code in `qc/m5*.qc`, and everything under `test/`, `tests/`, `release/` and `docs/`.
+- **Modified:** about sixty of DarkPlaces' ~250 engine source files — chiefly `gl_rmain.c`,
+  `r_lightning.c`, `menu.c`, `cl_screen.c`, `cl_particles.c`, `shader_glsl.h`,
+  `cl_main.c`, `vid_sdl.c` and `gl_backend.c`. Fork changes are commented where they
+  happen, and every user-visible one sits behind a cvar.
+- **Everything else is unmodified upstream** and mostly unused here: the multiplayer
+  cryptography (`crypto*.c`, written for Xonotic; it needs a library that is not bundled,
+  so it is dormant), the iOS and WebAssembly projects, the Xonotic CI scripts, the Windows
+  build notes.
+
 ## How it was made
 
 MetalQuake was built by one person working with an AI coding assistant (Anthropic's
