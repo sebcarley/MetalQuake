@@ -37,6 +37,9 @@
 # include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+#include <dlfcn.h>
+#endif
 #include "quakedef.h"
 
 #if TARGET_OS_IPHONE
@@ -2171,6 +2174,45 @@ static void FS_Init_Dir (void)
 		{
 			char *split;
 			dp_strlcpy(fs_basedir, sys.argv[0], sizeof(fs_basedir));
+			// APP TRANSLOCATION (2026-09-20). A quarantined app that Finder has never
+			// moved is run by macOS from a hidden read-only COPY under
+			// /private/var/folders/.../AppTranslocation/, so "beside the app" is a temp
+			// folder with no packs/ in it -- and notarisation does NOT exempt an app
+			// from this, it only removes the "cannot be opened" block. The Security
+			// framework will say where the app really lives; ask it, and carry on the
+			// walk below from THERE. Everything is looked up at run time so this file
+			// still links into the dedicated server with no new framework, and any
+			// failure simply leaves the translocated path (whose error screen says
+			// what to do).
+			if (strstr(fs_basedir, "/AppTranslocation/"))
+			{
+				void *sec = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY);
+				void *cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", RTLD_LAZY);
+				if (sec && cf)
+				{
+					void *(*urlfrompath)(void *, const unsigned char *, long, unsigned char) = (void *(*)(void *, const unsigned char *, long, unsigned char))dlsym(cf, "CFURLCreateFromFileSystemRepresentation");
+					unsigned char (*pathfromurl)(void *, unsigned char, unsigned char *, long) = (unsigned char (*)(void *, unsigned char, unsigned char *, long))dlsym(cf, "CFURLGetFileSystemRepresentation");
+					void (*release)(void *) = (void (*)(void *))dlsym(cf, "CFRelease");
+					void *(*original)(void *, void **) = (void *(*)(void *, void **))dlsym(sec, "SecTranslocateCreateOriginalPathForURL");
+					if (urlfrompath && pathfromurl && release && original)
+					{
+						char *append = strstr(fs_basedir, ".app/");
+						char apppath[MAX_OSPATH], realpath_[MAX_OSPATH];
+						void *url, *orig;
+						dp_strlcpy(apppath, fs_basedir, sizeof(apppath));
+						apppath[(append - fs_basedir) + 4] = 0;   // ".../Name.app"
+						url = urlfrompath(NULL, (const unsigned char *)apppath, (long)strlen(apppath), 1);
+						orig = url ? original(url, NULL) : NULL;
+						if (orig && pathfromurl(orig, 1, (unsigned char *)realpath_, (long)sizeof(realpath_)))
+						{
+							Con_Printf("App Translocation: running from a hidden copy; the app really lives at %s\n", realpath_);
+							dpsnprintf(fs_basedir, sizeof(fs_basedir), "%s/Contents/MacOS/x", realpath_);
+						}
+						if (orig) release(orig);
+						if (url) release(url);
+					}
+				}
+			}
 			split = strstr(fs_basedir, ".app/");
 			if (split)
 			{

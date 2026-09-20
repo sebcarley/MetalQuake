@@ -53,18 +53,10 @@ setting that puts the 1996 game back in one click.
    two together.
 2. Copy **`pak0.pak`** and **`pak1.pak`** from the `id1` folder of your Quake into
    **`MetalQuake/packs/id1/`**.
-3. **First run, once:** the app is not notarised, so macOS quarantines it. Open Terminal,
-   paste the line below *including the trailing space*, drag `MetalQuake.app` onto the
-   Terminal window, and press Enter:
-
-   ```
-   xattr -dr com.apple.quarantine 
-   ```
-
-   (Skipping this gives you either "the app can't be opened", or an app that opens and
-   says *the required files were not found* with the files right beside it — macOS runs a
-   hidden copy from a temporary folder until the flag is cleared.)
-4. Open `MetalQuake.app`. It starts on the **Best** tier. Too dark or bright on your
+3. Double-click `MetalQuake.app`. The first time, macOS says it was downloaded from the
+   internet and asks whether to open it — click **Open**. The app is signed with a
+   Developer ID and notarised by Apple, so there is no Terminal step.
+   It starts on the **Best** tier. Too dark or bright on your
    display? *Options → Brightness and Gamma*. Too slow? *Options → M5 Quality*.
 
 ### Optional extras (their authors' work, not included)

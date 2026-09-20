@@ -260,8 +260,46 @@ fi
 # --- sign, so the other Mac's Gatekeeper has something to check -------------
 # Ad-hoc (-) rather than a Developer ID: this is a personal build. The receiving
 # Mac will still quarantine a downloaded zip -- the README below says how.
+#
+# RELEASE_SIGN=1 (2026-09-20): DEVELOPER ID + NOTARISATION, which is what lets a stranger
+# double-click the app with no Terminal step. Signs every bundled dylib and then the app
+# with the hardened runtime and a secure timestamp (inside-out, never --deep: --deep
+# re-signs nested code with the OUTER options and is what Apple tells you not to ship),
+# submits a zip of the app to Apple with the keychain profile Seb stored
+# (`xcrun notarytool store-credentials metalquake`), waits, and STAPLES the ticket so the
+# first launch needs no network. No entitlements are needed: the engine dlopens only the
+# libraries inside its own bundle, and library validation accepts them because they carry
+# the same Team ID. The identity is found by name, never hardcoded.
+SIGNED=adhoc
+if [ "${RELEASE_SIGN:-0}" = "1" ]; then
+	SIGN_ID=$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')
+	[ -n "$SIGN_ID" ] || { echo "FAIL: RELEASE_SIGN=1 but no Developer ID Application certificate in the keychain"; exit 1; }
+	echo "== signing with: $SIGN_ID"
+	for f in "$APP/Contents/MacOS"/*.dylib; do
+		[ -f "$f" ] && codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$f"
+	done
+	codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$APP"
+	codesign --verify --deep --strict "$APP" || { echo "FAIL: the signature does not verify"; exit 1; }
+	echo "== notarising (Apple usually answers in a few minutes)"
+	NZ=$(mktemp -d /tmp/mqnotary.XXXXXX)
+	ditto -c -k --keepParent "$APP" "$NZ/app.zip"
+	xcrun notarytool submit "$NZ/app.zip" --keychain-profile "${RELEASE_NOTARY_PROFILE:-metalquake}" --wait > "$NZ/log" 2>&1 || true
+	cat "$NZ/log" | tail -8
+	if ! grep -q "status: Accepted" "$NZ/log"; then
+		SUB=$(awk '/^ *id:/{print $2; exit}' "$NZ/log")
+		[ -n "$SUB" ] && xcrun notarytool log "$SUB" --keychain-profile "${RELEASE_NOTARY_PROFILE:-metalquake}" 2>&1 | tail -40
+		echo "FAIL: Apple did not accept the app for notarisation"; exit 1
+	fi
+	rm -rf "$NZ"
+	xcrun stapler staple "$APP" || { echo "FAIL: could not staple the ticket"; exit 1; }
+	spctl -a -vv -t exec "$APP" 2>&1 | sed 's/^/   /'
+	spctl -a -t exec "$APP" || { echo "FAIL: Gatekeeper rejects the app"; exit 1; }
+	SIGNED=developerid
+	echo "== Developer ID signed, notarised and stapled"
+else
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 \
 	&& echo "== ad-hoc signed" || echo "-- codesign unavailable, shipping unsigned"
+fi
 
 # --- prove it is self-contained --------------------------------------------
 echo "== dependency check (must show NO /opt/homebrew or /usr/local)"
@@ -362,17 +400,11 @@ GOG) into:
 
     packs/id1/
 
-2. First run -- one Terminal command, once
-------------------------------------------
-macOS quarantines downloaded apps, and this one is not notarised. That causes
-BOTH failures you might see: the app refusing to open, or opening but saying
-"the required files were not found" with the packs folder right beside it
-(macOS runs a hidden copy from a temp folder -- "App Translocation").
-
-Open Terminal, paste this INCLUDING the trailing space, drag the MetalQuake
-app onto the Terminal window, press Enter:
-
-    xattr -dr com.apple.quarantine 
+2. Open it
+----------
+Double-click MetalQuake.app. The first time, macOS says it was downloaded from the
+internet and asks whether to open it: click Open. The app is signed and notarised by
+Apple, so there is nothing to bypass and no Terminal step.
 
 3. Keep the pair together
 -------------------------
