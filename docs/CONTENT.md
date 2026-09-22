@@ -4,7 +4,14 @@ The assets themselves live in `m5/` and are **deliberately not committed** — `
 gitignored, and this fork's `origin` is the public upstream. This file records what is
 installed, where it came from, and what each source asks for in return.
 
-Nothing here is redistributed by this repository. It is a record of a local install.
+Nothing here is committed to this repository. **Since 2026-09-22 the public MetalQuake
+release zip DOES redistribute the two packs that permit it**: the QRP texture pk3 (with the
+credit its licence asks, `QRP_CREDITS.txt`) and the community half of AMI r26 (`progs/`,
+`maps/`, with the pack's own `auth_mdl.txt` unmodified) -- minus every model the pack
+converted from the commercial Quake remaster, which `release/make-release.sh` names in
+`AMI_EXCLUDE` and asserts absent: boss, demon, enforcer, fish, hknight, ogre, shalrath,
+tarbaby, wizard, zombie, g_rock2, v_rock2 and their headgibs, plus Dissolution's
+v_plasma. The mission packs, Arcane Dimensions and the game data are never shipped.
 
 ---
 

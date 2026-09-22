@@ -66,16 +66,24 @@ setting that puts the 1996 game back in one click.
    It starts on the **Best** tier. Too dark or bright on your
    display? *Options → Brightness and Gamma*. Too slow? *Options → M5 Quality*.
 
-### Optional extras (their authors' work, not included)
+### What is included
 
-Drop them into `packs/` and they are picked up:
+`packs/m5` carries two things by other hands, each under its own terms and with its
+licence text beside it: the **Quake Revitalization Project**'s map textures
+(`QRP_map_textures_v.1.00.pk3`, credited as its licence asks), and the community-made
+models and item boxes from **Authentic Model Improvements r26** (`progs/`, `maps/`,
+`auth_mdl.txt` unmodified). The models that pack converted from the commercial Quake
+remaster are **left out** — nobody but their owners may distribute them — and the engine
+falls back to Quake's own for those. Delete the `.pk3` or `progs/` to play with the
+originals, or pick the Stock tier, which ignores both.
 
-| What | Where it goes |
+### Optional extras (their owners' work, not included)
+
+| Extra | Where it goes |
 |---|---|
-| Mission packs (`hipnotic`, `rogue`, `dopa`, `mg1`) | `packs/<name>/` — then *Single Player → Mission Packs* |
-| [Arcane Dimensions](https://www.moddb.com/mods/arcane-dimensions) | `packs/ad/` |
-| Quake Revitalization Project textures | the `.pk3` into `packs/m5/` |
-| Authentic Model Improvements | its `progs/` and `maps/` into `packs/m5/` — **not** its `progs.dat` |
+| The mission packs (`hipnotic`, `rogue`, and the re-release's `dopa`, `mg1`) | their folders into `packs/` |
+| Arcane Dimensions | its `ad` folder into `packs/` |
+| The soundtrack (`track02.ogg`, `track03.ogg` …) | `packs/id1/music/` |
 
 ## Building from source
 

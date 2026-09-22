@@ -46,8 +46,9 @@ REPO=$(pwd)
 # settings verbatim. It assembles into its OWN folder (release/public) so the private
 # build in release/out is never touched, packs/ is built from an ALLOW-LIST (a file
 # ships because it is named, never because it was not excluded), and the script ends
-# by asserting the result: no .pak/.pk3/.mdl/.bsp/.dem/.spr/.wav/.lmp anywhere, and
-# nothing in packs/ over 1 MB. One zip, one top-level folder.
+# by asserting the result: no .pak/.dem/.spr/.wav/.lmp/.ogg anywhere, no model or
+# texture but the two redistributable packs (QRP; the community half of AMI), and
+# nothing else in packs/ over 1 MB. One zip, one top-level folder.
 PUBLIC="${RELEASE_PUBLIC:-0}"
 if [ "$PUBLIC" = "1" ]; then
 	OUT="${RELEASE_OUT:-$REPO/release/public}/MetalQuake"
@@ -174,6 +175,57 @@ if [ "$PUBLIC" = "1" ]; then
 			*) cp "$f" "$OUT/packs/m5/" ;;
 		esac
 	done
+	# THIRD-PARTY CONTENT THAT MAY BE REDISTRIBUTED (2026-09-22, Seb: "put the
+	# texture packs and models in there too, just don't publish the copyrighted
+	# stuff like PAK0, PAK1, music, scourge, etc."). Two packs, each on its own
+	# licence, both recorded in docs/CONTENT.md:
+	#   - the Quake Revitalization Project map textures: free for any use on
+	#     condition of credit (project name + URL) -- QRP_CREDITS.txt beside it.
+	#   - Authentic Model Improvements r26: "you may distribute this file, provided
+	#     you include this text file, with no modifications" -- so its own
+	#     auth_mdl.txt travels UNMODIFIED (release/third-party/, fetched from the
+	#     pack's r26 tag) -- MINUS every model the pack converted from the
+	#     commercial Quake remaster (MachineGames / Nightdive), which the pack
+	#     cannot license and which stays out with the paks and the music. The
+	#     list is the r26 changelog's own: the nine monsters, the Spawn, the
+	#     Rotfish, the rocket launcher, and their headgibs. v_plasma.mdl is
+	#     Dissolution of Eternity's and stays out too (the ball gun falls back to
+	#     v_light.mdl). The item BSPs (health/ammo boxes) are community work.
+	# Both are OPTIONAL to the build: a machine without them ships without them
+	# and says so, because a stranger building from source will not have them.
+	AMI_EXCLUDE=" boss demon enforcer fish hknight ogre shalrath tarbaby wizard zombie g_rock2 v_rock2 h_demon h_hellkn h_mega h_ogre h_shal h_wizard h_zombie v_plasma "
+	if [ -d "$REPO/m5/progs" ] && [ -f "$REPO/release/third-party/auth_mdl.txt" ]; then
+		mkdir -p "$OUT/packs/m5/progs" "$OUT/packs/m5/maps"
+		N=0
+		for f in "$REPO"/m5/progs/*.mdl; do
+			b=$(basename "$f" .mdl)
+			case "$AMI_EXCLUDE" in *" $b "*) continue ;; esac
+			cp "$f" "$OUT/packs/m5/progs/"; N=$((N+1))
+		done
+		cp "$REPO"/m5/maps/b_*.bsp "$OUT/packs/m5/maps/" 2>/dev/null || true
+		cp "$REPO/release/third-party/auth_mdl.txt" "$OUT/packs/m5/auth_mdl.txt"
+		echo "   models: $N community AMI models + $(ls "$OUT/packs/m5/maps" | wc -l | tr -d ' ') item BSPs (the remaster-derived ones left out)"
+	else
+		echo "-- Authentic Model Improvements not installed here; shipping without the models"
+	fi
+	QRP="$REPO/m5/QRP_map_textures_v.1.00.pk3"
+	if [ -f "$QRP" ]; then
+		cp "$QRP" "$OUT/packs/m5/"
+		cat > "$OUT/packs/m5/QRP_CREDITS.txt" <<'TXT'
+QRP_map_textures_v.1.00.pk3 is the Quake Revitalization Project's map texture
+pack (Moon[Drunk], diffuse and luma layers), hand-made between 2002 and 2016,
+included here unmodified under its own terms: free to use in any project on
+condition that the project name and URL are credited.
+
+    Quake Revitalization Project -- http://qrp.quakeone.com
+
+Delete the .pk3 to play with Quake's original textures, or select the Stock
+tier, which ignores it.
+TXT
+		echo "   textures: the QRP map pack ($(du -h "$QRP" | cut -f1)) with its credit"
+	else
+		echo "-- the QRP texture pack is not installed here; shipping without it"
+	fi
 	python3 release/make-public-config.py \
 		"${RELEASE_CONFIG:-$HOME/Library/Application Support/darkplaces/m5/config.cfg}" \
 		"$OUT/packs/m5/config.cfg"
@@ -421,14 +473,22 @@ start on Options -> M5 Quality -> Fast, or Stock, and work upwards.
 It starts on "Best". If the picture is too dark or too bright on your display,
 Options -> Brightness and Gamma.
 
-Optional extras (not included, their authors' own work)
--------------------------------------------------------
+What is included, and what is not
+---------------------------------
+packs/m5 carries two things by other hands, each under its own terms (see the
+text files beside them): the Quake Revitalization Project's map textures, and
+the community-made models from Authentic Model Improvements r26 -- all of them
+except the ones that pack converted from the commercial Quake remaster, which
+are left out because nobody but their owners may distribute them (the engine
+falls back to Quake's own models for those). Delete the .pk3 or the progs
+folder to play with Quake's originals, or select the Stock tier.
+
+Optional extras (not included, their owners' work)
+---------------------------------------------------
 Drop any of these into packs/ and they are picked up:
   - the mission packs (hipnotic, rogue, and the re-release's dopa and mg1)
   - Arcane Dimensions (folder "ad")
-  - the Quake Revitalization Project textures (.pk3 into packs/m5)
-  - Authentic Model Improvements (its progs/ and maps/ into packs/m5 --
-    NOT its progs.dat, which would replace this fork's game code)
+  - the soundtrack: track02.ogg, track03.ogg ... into packs/id1/music
 
 Your settings are saved to
     ~/Library/Application Support/darkplaces/m5/config.cfg
@@ -449,10 +509,21 @@ TXT
 	grep -lE "/Users/|@outlook\." "$OUT/docs"/*.html && { echo "FAIL: a doc carries a personal path"; exit 1; } || true
 
 	echo "== PUBLIC assertions"
+	# game data and third-party content are forbidden EXCEPT the two packs the
+	# block above ships knowingly: the QRP pk3, .mdl under m5/progs, b_*.bsp under
+	# m5/maps -- and never a remaster-derived model or Dissolution's plasma gun
 	BAD=$(find "$OUT/packs" -type f \( -iname '*.pak' -o -iname '*.pk3' -o -iname '*.mdl' \
 		-o -iname '*.bsp' -o -iname '*.dem' -o -iname '*.spr' -o -iname '*.wav' \
-		-o -iname '*.lmp' -o -iname '*.ogg' -o -iname '*.tga' -o -iname '*.lit' \) )
-	BIG=$(find "$OUT/packs" -type f -size +1024k)
+		-o -iname '*.lmp' -o -iname '*.ogg' -o -iname '*.tga' -o -iname '*.lit' \) \
+		-not -path "$OUT/packs/m5/QRP_map_textures_v.1.00.pk3" \
+		-not -path "$OUT/packs/m5/progs/*.mdl" -not -path "$OUT/packs/m5/maps/b_*.bsp" )
+	for b in $AMI_EXCLUDE; do
+		[ -f "$OUT/packs/m5/progs/$b.mdl" ] && BAD="$BAD $OUT/packs/m5/progs/$b.mdl (remaster-derived or commercial)"
+	done
+	[ -f "$OUT/packs/m5/progs.dat" ] || BAD="$BAD (no progs.dat)"
+	[ -d "$OUT/packs/m5/progs" ] && [ ! -f "$OUT/packs/m5/auth_mdl.txt" ] && BAD="$BAD (AMI models without auth_mdl.txt)"
+	[ -f "$OUT/packs/m5/QRP_map_textures_v.1.00.pk3" ] && [ ! -f "$OUT/packs/m5/QRP_CREDITS.txt" ] && BAD="$BAD (QRP without its credit)"
+	BIG=$(find "$OUT/packs" -type f -size +1024k -not -name 'QRP_map_textures_v.1.00.pk3')
 	LINKS=$(find "$OUT/packs" -type l)
 	# (progs.dat legitimately carries the NAME m5_horde_best; the config must not carry a value)
 	PERSONAL=$(grep -rlE "/Users/|sebcarley" "$OUT/packs" || true)
@@ -462,7 +533,7 @@ TXT
 		echo "$BAD"; echo "$BIG"; echo "$LINKS"; echo "$PERSONAL"
 		exit 1
 	fi
-	echo "   clean: $(find "$OUT/packs" -type f | wc -l | tr -d ' ') files, $(du -sh "$OUT/packs" | cut -f1), no game data, no third-party assets, nothing personal"
+	echo "   clean: $(find "$OUT/packs" -type f | wc -l | tr -d ' ') files, $(du -sh "$OUT/packs" | cut -f1), no game data, only the two redistributable packs, nothing personal"
 
 	if [ "${RELEASE_ZIP:-1}" = "1" ]; then
 		PUBZIP="$(dirname "$OUT")/MetalQuake-$STAMP.zip"
