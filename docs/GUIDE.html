@@ -1,3 +1,6 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MetalQuake</title>
@@ -297,7 +300,23 @@ footer {
 }
 a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 2px; }
 a:focus-visible, :focus-visible { outline: 2px solid var(--fire); outline-offset: 2px; }
+/* ---- headline / lede ------------------------------------------------- */
+.lede {
+  font-size: 1.06rem;
+  margin: 0 0 1.2rem;
+}
+/* ---- console tables ------------------------------------------------- */
+.console table { font-size: 0.76rem; margin: 0.35rem 0 0; }
+.console th, .console td {
+  text-align: left; white-space: normal; padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.console td:first-child { white-space: nowrap; width: 1%; padding-right: 1.2rem; }
+.console td:last-child { min-width: 0; }
+.console tbody tr:last-child td { border-bottom: none; }
 </style>
+</head>
+<body>
 
 <div class="layout">
 
@@ -305,11 +324,10 @@ a:focus-visible, :focus-visible { outline: 2px solid var(--fire); outline-offset
   <p class="colophon">Quake · a native Metal engine for Apple Silicon</p>
   <h1>MetalQuake</h1>
   <p class="standfirst">Quake, 1996, sunk into colder water. The light is traced ray by
-  ray and every shadow belongs to something. The fog pools in the low rooms and hides what
+  ray, and every shadow belongs to something. The fog pools in the low rooms and hides what
   is coming. The water goes dark at depth. Between the torches the black is honestly black,
-  and it is not empty. The old game is intact beneath, exactly as id built it — only
-  further from the surface than you remember, and no longer entirely convinced you are
-  alone down there.</p>
+  and it is not empty. The old game lies intact beneath, exactly as id built it — only
+  further from the surface, and no longer alone.</p>
   <p class="colophon foot">Autumn 2026</p>
 </header>
 
@@ -319,193 +337,253 @@ a:focus-visible, :focus-visible { outline: 2px solid var(--fire); outline-offset
   <a class="fog" href="#murk">The murk</a>
   <a class="fog" href="#water">The water</a>
   <a class="plasma" href="#lightning">The lightning gun</a>
-  <a class="mods" href="#guns">The guns and the dead</a>
+  <a class="mods" href="#guns">The arsenal and the dead</a>
   <a href="#dimensions">Other dimensions</a>
   <a href="#seeing">Seeing, and not</a>
   <a href="#sound">The room answers</a>
   <a href="#tiers">Seven ways to run it</a>
   <a href="#replay">Watching it back</a>
   <a href="#install">Taking it with you</a>
-  <a href="#limits">What it does not do</a>
+  <a href="#limits">The edge of the known</a>
 </nav>
 
 <main>
 
 <p><strong>MetalQuake</strong> is Quake for Apple Silicon: a native Metal renderer, grown
-out of DarkPlaces, with the maps' real lights traced on the GPU's ray-tracing cores. It runs
+out of DarkPlaces, with the maps' own lights traced on the GPU's ray-tracing cores. It runs
 the original game, the two mission packs, the two later episodes and Arcane Dimensions. It
 does not change what Quake is. It changes what you can see of it — and what you cannot.</p>
 
-<p>Everything below is on the menus and can be switched off there. The short lists at the
-end of each part are for the console, for anyone who wants to reach further in; they can be
-ignored entirely.</p>
+<p>Each part below opens with what the thing is, then goes deeper. Everything is on the
+menus and can be switched off there. The table at the foot of each part is for the
+console, for anyone who would reach further in; it can be passed over entirely.</p>
 
+<!-- ================================================================ -->
 <section class="rt" id="light">
   <span class="kicker">I &middot; The light</span>
   <h2>Every shadow belongs to something</h2>
   <p class="epigraph">Follow a shadow back far enough and you will find the flame — or
-  whatever is standing between you and the flame.</p>
+  whatever stands between you and the flame.</p>
 
-  <p>The light in Quake's halls was painted on. It lies where the mapmaker left it, and
-  nothing that moves has ever disturbed it. Here the light is <em>cast</em>. Every frame,
-  the map's own torches and braziers throw their light through the rooms on the GPU's
-  ray-tracing hardware, and the shadows fall where they must. A pillar's shadow swings
-  across the floor as you pass the torch behind it. A doorway is dark because the wall
-  beside it is in the way. An Ogre coming down the corridor carries its own shadow ahead of
-  it, and you see that before you see the Ogre.</p>
+  <p class="lede">The map's own torches, braziers and lava cast their light through the
+  rooms every frame, on the GPU's ray-tracing hardware. Shadows fall where they must. Light
+  bounces once. Nothing painted onto the stone in 1996 is trusted over what the flame can
+  actually reach.</p>
 
+  <h3>Cast light</h3>
+  <p>A pillar's shadow swings across the floor as you pass the torch behind it. A doorway is
+  dark because the wall beside it is in the way. An Ogre coming down the corridor carries
+  its own shadow ahead of it, and you see the shadow before you see the Ogre. Each surface
+  takes its light from the brightest few lamps that can see it — through no wall, round no
+  corner — and a light that cannot see you does not light you.</p>
+
+  <h3>Full wall lighting, and the single bounce</h3>
   <p>With full wall lighting the ray tracer owns the whole of it. The painted light is set
   aside and every surface takes exactly the light that reaches it, so a room has a
   direction — a side that faces the fire and a side that does not — and the corners are as
-  dark as they deserve to be. Light bounces once. Torch glow bleeds round a corner into a
+  dark as they deserve to be. Light bounces once: torch glow bleeds round a corner into a
   room it cannot see directly; lava throws its orange onto the ceiling above it; a brick
-  corridor bleeds brown into its own shadows and a slime hall bleeds green. Whatever is
-  waiting in the corner is lit by what the room is made of.</p>
+  corridor bleeds brown into its own shadows and a slime hall bleeds green. Whatever waits
+  in the corner is lit by what the room is made of.</p>
+  <p>The same ray knows how enclosed each point of the room is, and holds the last thin fill
+  back from the recesses, so a corner reads as a corner. Shadows know where their casters
+  stand: hard at a foot on the floor, softening as the caster lifts away, the way a real
+  penumbra does. A final sourceless fill keeps the blacks from dying altogether; it can be
+  taken to nothing.</p>
 
-  <p>And the walls are proof against every one of them, not merely the nearest. A room's
-  brightest lamp was once the only one a surface asked about, and the rest shone on
-  regardless — through stone, around corners, out of recesses no eye could find — laying
-  clean bright discs on walls that ought to have been dark. Now a surface puts the question
-  to the brightest few in turn, and a light that cannot see you does not light you.</p>
-
-  <p>Small truths follow from that. A torch does not shadow itself. A glowing rune, a lamp
-  face, a lit panel keeps its own light whatever falls across it. The weapon in your hands
-  takes the light of the room it is in: it dims as you walk into the dark, warms beside a
-  torch, flickers with it, and when you fire, the muzzle flash lights the hands holding the
-  gun. The Quad burns blue about you and the Pentagram red, an aura at arm's
-  length rather than a lamp on a pole. Quake marks its dangers in red — the bands on an Ogre's grenade, the buttons, the
-  cross on a health box — and here red is allowed to burn, texel by texel, while brick and
-  dried blood stay as dead as they should. The sky is open sky, so a shaft of light crosses
-  a skylight the way it should. And where a map declares a sun — Arcane Dimensions does —
-  it can be switched on: courtyards and rooftops take real sunlight, with real shadows, and
-  the arcades stay dark.</p>
+  <h3>Small truths</h3>
+  <p>A torch does not shadow itself. A glowing rune, a lamp face, a lit panel keeps its own
+  light whatever falls across it. Embers climb out of every flame you can see, drift, cool
+  and die. The weapon in your hands takes the light of the room it is in — dims as you walk
+  into the dark, warms beside a torch, flickers with it — and when you fire, the muzzle
+  flash lights the hands holding the gun. The Quad burns blue about you and the Pentagram
+  red, an aura at arm's length rather than a lamp on a pole. Quake marks its dangers in red
+  — the bands on an Ogre's grenade, the buttons, the cross on a health box — and red is
+  allowed to burn, texel by texel, while brick and dried blood stay as dead as they
+  should.</p>
+  <p>The sky is open sky, so a shaft of light crosses a skylight as it should, and under an
+  open sky the storm is let in: a cold flash from above that throws every wall's shadow at
+  once, a second stutter of it, and the thunder arriving a breath later from that quarter of
+  the sky. The murk over an open shaft turns pale for that instant and falls dark again; the
+  air in a closed room, which can see no sky, never moves at all. Where a map declares a sun
+  — Arcane Dimensions does — it can be switched on: courtyards and rooftops take real
+  sunlight with real shadows, and the arcades stay dark.</p>
 
   <h3>Lava</h3>
   <p>Lava boils. Its crust flows across the sheet rather than churning on the spot; it
-  glows, lights the room above it, and warms the air. That warmth is visible: the air over
-  a lava lake shimmers, and whatever you are looking at <em>through</em> it ripples — the
-  far wall, the bridge, Chthon standing in his pit. It is the only warning the game gives
-  before you are standing in it.</p>
+  glows, lights the room above it, and warms the air. That warmth is visible: the air over a
+  lava lake shimmers, and whatever you are looking at through it ripples — the far wall, the
+  bridge, Chthon standing in his pit. It is the only warning the game gives before you are
+  standing in it.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  <code>rt_metal</code> is the master, <code>rt_metal_walllight</code> the wall lighting,
-  <code>rt_metal_gi</code> the bounce (<code>_emissive</code> and <code>_albedo_tex</code>
-  its lava and colour), <code>rt_metal_glowpass</code>, <code>rt_metal_viewmodel</code>,
-  <code>r_redglow</code>, <code>rt_metal_skyopen</code>. Lava: <code>r_lavaboil</code>,
-  <code>r_lavaflow</code>, <code>r_lavaglow</code>, <code>r_lavashimmer</code>. The sun:
-  <code>exec sun_on.cfg</code>. Menu: Options → RT Shadows.</p>
+  <div class="console">
+    <span class="kicker">At the console &middot; Options → RT Shadows</span>
+    <table>
+      <tr><td><code>rt_metal</code></td><td>the master</td></tr>
+      <tr><td><code>rt_metal_walllight</code></td><td>full wall lighting in place of the painted light</td></tr>
+      <tr><td><code>rt_metal_gi</code></td><td>the single bounce; <code>_emissive</code> the lava's share, <code>_albedo_tex</code> the colour the walls lend it</td></tr>
+      <tr><td><code>rt_metal_gi_ao</code></td><td>the corners' dark (<code>exec gi_ao_off.cfg</code> / <code>gi_ao_on.cfg</code>)</td></tr>
+      <tr><td><code>rt_metal_contact</code></td><td>shadows that harden at the foot (<code>exec contact_off.cfg</code> / <code>contact_on.cfg</code>)</td></tr>
+      <tr><td><code>rt_metal_shadowlights</code></td><td>0 keeps every lamp behind its walls; 1 lets them shine through again (<code>exec spotfix_on.cfg</code> / <code>spotfix_off.cfg</code>)</td></tr>
+      <tr><td><code>rt_metal_ambient</code></td><td>the last sourceless fill; 0 for dead blacks</td></tr>
+      <tr><td><code>rt_metal_glowpass</code></td><td>runes, lamp faces and lit panels keep their own light</td></tr>
+      <tr><td><code>rt_metal_viewmodel</code></td><td>the weapon lit by the room</td></tr>
+      <tr><td><code>m5_powerupglow</code></td><td>the Quad's blue and the Pentagram's red aura; 0 for the plain white lamp (<code>exec quadglow_off.cfg</code> / <code>quadglow_on.cfg</code>)</td></tr>
+      <tr><td><code>r_redglow</code></td><td>red texels allowed to burn</td></tr>
+      <tr><td><code>rt_metal_skyopen</code></td><td>the sky as open sky</td></tr>
+      <tr><td><code>r_skylightning</code></td><td>the storm; <code>r_skylightning_fog</code> how much of a flash reaches the air (<code>exec skylightning_off.cfg</code> / <code>_on.cfg</code>)</td></tr>
+      <tr><td><code>m5_torch_embers</code></td><td>embers off the flames (<code>exec embers_off.cfg</code> / <code>embers_on.cfg</code>)</td></tr>
+      <tr><td><code>exec sun_on.cfg</code></td><td>the sun, where a map declares one</td></tr>
+      <tr><td><code>r_lavaboil</code> <code>r_lavaflow</code> <code>r_lavaglow</code> <code>r_lavashimmer</code></td><td>the lava: its boil, its flow, its light, and the heat above it</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section class="fog" id="murk">
   <span class="kicker">II &middot; The murk</span>
   <h2>It lies where the air is stillest</h2>
   <p class="epigraph">It settles into the low rooms and along the water, and it remembers
   the shape of the level better than you do.</p>
 
-  <p>Not a haze over the screen. The fog knows the level — where the floor is, where the
-  water is, where the corners are — and it settles by that knowledge: into the low rooms,
-  along the waterline, into the crevices, thickest where the air is stillest. A corridor
-  that reads clear at eye level has a knee-deep layer of it lying on the floor, billowing at
-  the top like the surface of a cloud, drifting through the doorway ahead of you as if it
-  had been draining down there for years and you were the first thing to disturb it.</p>
+  <p class="lede">The fog knows the level — where the floor is, where the water is, where
+  the corners are — and settles by that knowledge. It is lit by the room it lies in, every
+  light throws its shadow into it, and it is kept in three dimensions, so it stays put when
+  you turn.</p>
 
-  <p>It is lit by the level. A dark room gives dark fog, and a dark passage keeps its
-  dark fog even where it runs beside a bright hall: the light of one room does not leak
-  through the wall into the air of the next. A torch throws a pool of light
-  into it, and inside that pool you can see the fog move. Every light in the room throws
-  its shadow into the fog as well, so a shaft of light through a doorway has the shape of
-  the doorway, and the pillar in the way cuts a dark bar through it. Something crossing
-  that shaft blocks it. You will see the beam go dark before you see what did it.</p>
+  <h3>Where it settles</h3>
+  <p>Not a haze over the screen. It gathers in the low rooms, along the waterline, into the
+  crevices, thickest where the air is stillest. A corridor that reads clear at eye level has
+  a knee-deep layer of it lying on the floor, billowing at the top like the surface of a
+  cloud, drifting through the doorway ahead of you as though it had been draining down there
+  for years and you were the first thing to disturb it.</p>
 
-  <p>The fog is kept in three dimensions, so it stays where it is when you turn or step
-  sideways, and it thickens inside the water into something you cannot see through. Dust
-  hangs in the air, and it is ash rather than snow: soot and charcoal, charred brown, a
-  cold blue-grey, and here and there a single pale fleck among them. They drift and eddy
-  around you, take whatever light the room is willing to give, and flare white the instant
-  a rocket goes past. The smoke of an explosion, the blood, the
-  sparks take the room's light and sink into the fog at their proper distance instead of
-  sitting bright in front of it. And the murk holds a warning of its own: the air over lava
-  glows faintly orange from inside, long before the lava is in view.</p>
+  <h3>Lit by the level</h3>
+  <p>A dark room gives dark fog, and a dark passage keeps its dark fog where it runs beside a
+  bright hall: the light of one room does not leak through the wall into the air of the next.
+  A torch throws a pool of light into it, and inside that pool you can see the fog move.
+  Every light in the room throws its shadow into the fog as well, so a shaft of light
+  through a doorway has the shape of the doorway, and the pillar in the way cuts a dark bar
+  through it. Something crossing that shaft blocks it. You will see the beam go dark before
+  you see what did it.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  <code>r_volumetric</code> is the master; <code>_density</code> (keep it low —
-  corners multiply it), <code>_corner</code>, <code>_ground</code> and
-  <code>_groundheight</code> for the floor layer, <code>_ambient</code> for the level's
-  light (<code>_ambientgain</code> its strength, <code>_ambientdilate</code> the wall fill). <code>rt_metal_fog</code> lights it per step; <code>rt_metal_lightsample</code> is
-  every light's shadow in it; <code>rt_metal_fog_froxel</code> the three dimensions.
-  <code>m5_dust 256</code> for the motes, <code>cl_particles_lighting 2</code> to light
-  them, <code>cl_particles_lighting_static</code> to settle how much the room lights them
-  without touching what a muzzle flash does. <code>r_volumetric_probe</code> says what the fog sees where you stand. Menu:
-  Options → Volumetric Fog.</p>
+  <h3>Held in three dimensions</h3>
+  <p>The fog occupies the room rather than the screen, so it stays where it is when you turn
+  or step sideways, and it thickens inside the water into something you cannot see through.
+  The smoke of an explosion, the blood and the sparks take the room's light and sink into
+  the fog at their proper distance instead of sitting bright in front of it. The murk holds
+  a warning of its own: the air over lava glows faintly orange from inside, long before the
+  lava is in view.</p>
+
+  <h3>Ash</h3>
+  <p>Dust hangs in the air, and it is ash rather than snow: soot and charcoal, charred brown,
+  a cold blue-grey, and here and there a single pale fleck among them. The motes drift and
+  eddy around you, take whatever light the room is willing to give, and flare white the
+  instant a rocket goes past.</p>
+
+  <div class="console">
+    <span class="kicker">At the console &middot; Options → Volumetric Fog</span>
+    <table>
+      <tr><td><code>r_volumetric</code></td><td>the master</td></tr>
+      <tr><td><code>r_volumetric_density</code></td><td>how thick — keep it low; the corners multiply it</td></tr>
+      <tr><td><code>r_volumetric_corner</code></td><td>how much thicker in the crevices</td></tr>
+      <tr><td><code>r_volumetric_ground</code> <code>_groundheight</code></td><td>the floor layer and how deep it lies</td></tr>
+      <tr><td><code>r_volumetric_ambient</code></td><td>the level's light in the fog; <code>_ambientgain</code> its strength, <code>_ambientdilate</code> the wall fill</td></tr>
+      <tr><td><code>rt_metal_fog</code></td><td>the fog lit per step</td></tr>
+      <tr><td><code>rt_metal_lightsample</code></td><td>every light's shadow in the fog</td></tr>
+      <tr><td><code>rt_metal_fog_froxel</code></td><td>the fog held in three dimensions</td></tr>
+      <tr><td><code>m5_dust 256</code></td><td>the ash; <code>cl_particles_lighting 2</code> lights it, <code>cl_particles_lighting_static</code> sets how much the room lights it without touching what a muzzle flash does</td></tr>
+      <tr><td><code>r_volumetric_probe</code></td><td>what the fog sees where you stand</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section class="fog" id="water">
   <span class="kicker">III &middot; The water</span>
   <h2>Nothing is stiller than the water</h2>
   <p class="epigraph">Stand on the bank and look down. The floor of the pool is there,
   further off than you thought, and the light on it is not the light you brought.</p>
 
-  <p>Quake's water was a sheet. It scrolled, it had a colour, and it hid whatever was under
-  it. This is water. Look down into it from the bank and the floor is there, its stones
-  bending under a surface that moves at the pace of real water — a quick ripple, read from
-  the water's own grain, that catches the light as your view flattens toward the far bank.
-  Directly above a shallow pool you can count the flagstones. From across a moat the pillars
-  run down into a surface you cannot see into. The murk inside it is as thick from the bank
-  as it is once you are under: a shallow pool shows you its bottom, a deep one shows you
-  nothing, and you do not learn which kind you are looking at until you are in it.</p>
+  <p class="lede">Water is water. It has a surface that moves at the pace of real water, a
+  floor you can see through to when the pool is shallow, a murk that closes in at depth,
+  and a band of mist along its edge. It takes the room's light. It does not reflect the
+  room.</p>
 
-  <p>A band of mist lies along the waterline. The fog settles onto a lake as it settles
-  onto a floor, level from shore to shore, so a lakeside at night is a cave mouth, a mist
-  lying on black water, and a torch-lit shrine on the far bank reading dimly through it.
-  Where the water is clear it recedes into the fog with distance like everything else, so a
-  pool at the far end of a foggy hall is a darker place in the murk and not a shape cut out
-  of it. It takes the room's light: a torch-lit pool glows, a dark one is black. It does not
-  reflect. The room is not in the water — only what the water hides.</p>
+  <h3>The surface</h3>
+  <p>Look down into it from the bank and the floor is there, its stones bending under a
+  surface that moves at the pace of real water — a quick ripple, read from the water's own
+  grain, that catches the light as your view flattens toward the far bank. Directly above a
+  shallow pool you can count the flagstones. From across a moat the pillars run down into a
+  surface you cannot see into. The murk inside it is as thick from the bank as it is once
+  you are under: a shallow pool shows you its bottom, a deep one shows you nothing, and you
+  do not learn which kind you are looking at until you are in it.</p>
 
-  <p>Beneath the surface the murk closes in. How far you can see is a single setting: a
-  hand's reach, or a room's. Slime and lava have their own, so a lava lake is not the same
-  orange haze as a flooded hall, and each has its own colour.</p>
+  <h3>The waterline</h3>
+  <p>A band of mist lies along the water. The fog settles onto a lake as it settles onto a
+  floor, level from shore to shore, so a lakeside at night is a cave mouth, a mist lying on
+  black water, and a torch-lit shrine on the far bank reading dimly through it. Where the
+  water is clear it recedes into the fog with distance like everything else, so a pool at
+  the far end of a foggy hall is a darker place in the murk and not a shape cut out of it.
+  A torch-lit pool glows; a dark one is black. The room is never in the water — only what
+  the water hides.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  The water needs <em>Force Water Alpha</em> on the Effects and Particles page
-  (<code>r_wateralpha_force 1</code>) with <em>Water Alpha</em> below 1
-  (<code>r_wateralpha 0.7</code>). <code>r_watersurface</code> is the surface;
-  <code>r_watersurface_clear</code> how much the murk shows from the bank (1 = as thick as
-  from within, 0 = glass). <code>r_volumetric_waterdensity</code> is the murk inside (1.0
-  is a room's reach, 2.5 a hand's; <code>exec uw_clear.cfg</code> / <code>uw_mid.cfg</code>
-  / <code>uw_thick.cfg</code>), with <code>_slimedensity</code> and
-  <code>_lavadensity</code> beside it; <code>r_volumetric_watermist</code> and
-  <code>_mistheight</code> are the band; <code>rt_metal_liquids</code> the room's light on
-  the surface. <code>exec watersurface_big.cfg</code> to see the mechanism,
-  <code>watersurface_off.cfg</code> for the old sheet.</p>
+  <h3>Beneath</h3>
+  <p>Under the surface the murk closes in. How far you can see is a single setting: a hand's
+  reach, or a room's. Slime and lava have their own, so a lava lake is not the same orange
+  haze as a flooded hall, and each has its own colour. The light the fog carries in the air
+  goes under the surface with you, so a torch above a pool lays its shafts down into it. And
+  on the stone beneath the water a net of bright cells slides and knots as the surface moves
+  over it.</p>
+
+  <div class="console">
+    <span class="kicker">At the console &middot; Options → Effects and Particles</span>
+    <table>
+      <tr><td><code>r_wateralpha_force 1</code> <code>r_wateralpha 0.7</code></td><td>the water needs Force Water Alpha on and Water Alpha below 1</td></tr>
+      <tr><td><code>r_watersurface</code></td><td>the surface (<code>exec watersurface_big.cfg</code> shows the mechanism; <code>watersurface_off.cfg</code> is the 1996 sheet)</td></tr>
+      <tr><td><code>r_watersurface_clear</code></td><td>how much of the murk shows from the bank — 1 as thick as from within, 0 glass</td></tr>
+      <tr><td><code>r_volumetric_waterdensity</code></td><td>the murk beneath: 1.0 a room's reach, 2.5 a hand's (<code>exec uw_clear.cfg</code> / <code>uw_mid.cfg</code> / <code>uw_thick.cfg</code>)</td></tr>
+      <tr><td><code>r_volumetric_slimedensity</code> <code>_lavadensity</code></td><td>the same for slime and lava</td></tr>
+      <tr><td><code>r_volumetric_watermist</code> <code>_mistheight</code></td><td>the band along the waterline and how high it lies</td></tr>
+      <tr><td><code>rt_metal_liquids</code></td><td>the room's light on the surface</td></tr>
+      <tr><td><code>rt_metal_fog_liquidlight</code></td><td>the fog's light carried under the surface (<code>exec fog_liquidlight_off.cfg</code> / <code>_on.cfg</code>)</td></tr>
+      <tr><td><code>r_caustics</code></td><td>the net of light on the pool floor (<code>exec caustics_off.cfg</code> / <code>caustics_on.cfg</code>)</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section class="plasma" id="lightning">
   <span class="kicker">IV &middot; The lightning gun</span>
   <h2>The bolt and the ball</h2>
   <p class="epigraph">The bolt is a straight line drawn between you and what you have
   decided to kill. The ball is a decision you have let go of.</p>
 
-  <p>Hold the trigger and the thunderbolt is a jagged white discharge that re-rolls its
-  shape fifteen times a second, forks in mid-air, frays into hair-thin streamers at every
-  free end and dissolves rather than stopping square. Its edge boils. It lights the room it
-  crosses and the fog it crosses, it is clipped to the stone so it never draws through a
-  wall, and the moment it connects with something it burns brighter and sizzles louder, so
-  you know. The arc wanders between the gun's three electrodes as a real arc does. Its
-  colour is yours to set.</p>
+  <p class="lede">The thunderbolt is a living discharge that lights the room and the fog it
+  crosses. Press 9 and a second gun rises: the plasma gun from <em>Dissolution of
+  Eternity</em>, which lets go of a slow, humming globe that arcs at everything living it
+  can see — and, after a second, at you.</p>
 
-  <p>Press 9 and a different gun rises in your hands — the plasma gun from <em>Dissolution
-  of Eternity</em>. It winds up with a rising whine and a globe swelling at the muzzle, and
-  lets go of a sphere of plasma that drifts down the line you aimed at something like a
-  walking pace: a dark sun boiling with plasma, veined blue-white, turning slowly, violet
-  filaments curling off its surface to the glass, dimming what lies behind it, humming. The
-  longer it flies the more violently it heaves, throwing prominences and sparks off itself.
-  Ten times a second it arcs at everything living it can see and sets it alight, and an arc
-  that lands forks on from its victim to the next, so a pack dies together, the core flaring
-  and the filaments thickening like a hand on the glass. It does not hunt. It leans, a
-  little, toward whatever is nearest — more toward a Shambler than a grunt — and goes where
-  you sent it.</p>
+  <h3>The bolt</h3>
+  <p>Hold the trigger and the thunderbolt is a jagged white discharge that re-rolls its shape
+  fifteen times a second, forks in mid-air, frays into hair-thin streamers at every free end
+  and dissolves rather than stopping square. Its edge boils. It lights the room it crosses
+  and the fog it crosses, it is clipped to the stone so it never draws through a wall, and
+  the moment it connects with something it burns brighter and sizzles louder, so you know.
+  The arc wanders between the gun's three electrodes as a real arc does. Its colour is yours
+  to set.</p>
 
+  <h3>The ball</h3>
+  <p>The plasma gun winds up with a rising whine and a globe swelling at the muzzle, and lets
+  go of a sphere of plasma that drifts down the line you aimed at something like walking
+  pace: a dark sun boiling with plasma, veined blue-white, turning slowly, violet filaments
+  curling off its surface to the glass, dimming what lies behind it, humming. The longer it
+  flies the more violently it heaves, throwing prominences and sparks off itself. Ten times
+  a second it arcs at everything living it can see and sets it alight, and an arc that
+  lands forks on from its victim to the next, so a pack dies together, the core flaring and
+  the filaments thickening like a hand on the glass. It does not hunt. It leans, a little,
+  toward whatever is nearest — more toward a Shambler than a grunt — and goes where you sent
+  it.</p>
   <p>When its time is up, or it touches water, it discharges in a blink, a shockwave and a
   thunderclap, and ignites whatever survives. On a wall it does not explode: it stops there
   and earths itself, arc after crackling arc into the stone, until the shell collapses. A
@@ -514,79 +592,80 @@ ignored entirely.</p>
   stain creeps in at the edges of your sight, and it will take you as readily as anything
   else. Fire it, and step back.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  <code>r_lightningbeam_m5</code> is the bolt (Options → Lightning Gun: World Light,
-  Wildness, Branches, Core Hotness, Core Volume, Fog Scatter, the colour);
-  <code>m5_balllightning</code> the ball, key 9 or <code>impulse 202</code>, a row on the
-  M5 Fun Mods page; <code>m5_balllightning_*</code> its speed, life, reach, damage, cost,
-  lean, charge and arming second; <code>r_lightningbeam_m5_ballsize</code> and
-  <code>_ballcolor_*</code> the globe. The bolt's light and the fog's glow need the ray
-  tracer on.</p>
+  <div class="console">
+    <span class="kicker">At the console &middot; Options → Lightning Gun</span>
+    <table>
+      <tr><td><code>r_lightningbeam_m5</code></td><td>the bolt; the menu holds World Light, Wildness, Branches, Core Hotness, Core Volume, Fog Scatter and the colour</td></tr>
+      <tr><td><code>m5_balllightning</code></td><td>the ball — key 9 or <code>impulse 202</code>; a row on the M5 Fun Mods page</td></tr>
+      <tr><td><code>m5_balllightning_*</code></td><td>its speed, life, reach, damage, cost, lean, charge and the arming second</td></tr>
+      <tr><td><code>r_lightningbeam_m5_ballsize</code> <code>_ballcolor_*</code></td><td>the globe itself</td></tr>
+      <tr><td>&nbsp;</td><td>the bolt's light and the fog's glow need the ray tracer on</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section class="mods" id="guns">
-  <span class="kicker">V &middot; The guns and the dead</span>
+  <span class="kicker">V &middot; The arsenal and the dead</span>
   <h2>The old rules bend here</h2>
   <p class="epigraph">The guns kick, the dead burn, the waves keep coming — and the game
   beneath does not object. It has seen worse.</p>
 
-  <p><strong>The shotgun</strong> is a Doom shotgun if you want one: ten pellets, a tighter
-  spread, a harder kick, a warm muzzle flash, and a red hull with a brass head that tumbles
-  out of the breech, bounces on the flagstones and comes to rest. And a gun that fires now flashes,
-  as a gun should: a starburst at the muzzle, following the barrel through its kick and gone in
-  a blink, on your shotguns, nailguns and launchers, on every grunt's gun in the dark ahead
-  of you, and the sparks off a bullet strike are hot needles rather than soft rays. Every
-  spark, ember, puff and drop the engine throws is drawn from one small book of shapes, and
-  that book is printed sixteen times finer, so a spark a yard from your face keeps its
-  edge and its thread instead of dissolving into a soft round glow; an explosion's embers are
-  hot grains with a rim, and blood falls as drops rather than smudges. Smoke
-  and fire wrap the stone instead of being sliced by it: where a puff meets a
-  wall or the floor it thins away rather than ending in a hard line. An explosion's
-  shockwave bends the air: the ring that races out from the blast shows the
-  stone behind it warped outward as it passes. Where the ball earths and where the axe
-  strikes, the scorch is left glowing, an orange that cools to black in a few breaths. The
-  corners keep their dark: the same ray that carries a room's light into
-  its recesses knows how enclosed each point is, and holds the sourceless fill back
-  there, so a corner reads as a corner. The water is no longer blind: the light that the
-  fog carries in the air goes under the surface, so a torch above a pool lays its
-  shafts down into it. And shadows know where their casters stand: hard at a foot on the
-  floor, softening as the caster lifts away, the way a real penumbra does. And the torches
-  live: embers climb out of every flame you can see, drift, cool and die. Under
-  an open sky the storm is let in: a cold flash from above that throws every wall's
-  shadow at once, a second stutter of it, and the thunder arriving a breath later from that
-  quarter of the sky. The air beneath it goes with it — the murk over an open shaft turns
-  pale for that instant and falls dark again — while the air in a closed room, which can see
-  no sky, never moves at all. And the pools have their light: on the stone beneath the water
-  a net of bright cells slides and knots as the surface moves over it. The
-  shotguns spit a spray of sparks that leaves the barrel and travels with it; how many, how
-  far they fly and how long they burn is yours to decide.
-  <strong>Lightning ignites.</strong> A bolt sets its victim alight — flame, smoke, a charring skin — and the
-  fire is a real light, so a burning Fiend lights the fog around it and throws its own
-  shadow as it comes at you. A Shambler's lightning sets <em>you</em> alight. <strong>The
-  Scrag's spit</strong> is acid: a yellow-green light rides it, lighting the wall it passes
-  and the fog it passes through, and it sizzles where it lands, on stone or on you.</p>
+  <p class="lede">A set of gameplay mods, each its own switch, on <strong>Options → M5 Fun
+  Mods</strong>: a Doom shotgun, guns that flash and kick, lightning that sets things alight,
+  acid that sizzles, explosions with smoke, a horde mode that studies you, and a handlamp
+  that cannot be trusted.</p>
 
-  <p><strong>Explosions</strong> have smoke. A white blink, a bang, a shockwave ring that
-  blinks the room's light with it; a fireball with structure; then hot brown smoke rolling
-  up close in and a slower grey plume above it, embers that fall and bounce, a scorch left
-  on the floor. A teleport is a burst of streaks and motes rather than a cloud of dots.
-  <strong>The guns feel their work</strong>: a snap from the shotgun, the
-  view shoved back by the super shotgun, a tremor from the nailguns, a real shove from the
-  rocket launcher, a buzz from the thunderbolt, a slow heave from the ball gun; nails that
-  stream from both barrels in turn, every third one drawing a hot streak through the fog; an
-  axe that throws sparks off a wall. Each is its own switch, for anyone who would have the old
-  guns back.</p>
+  <h3>The shotgun, and the flash</h3>
+  <p>The shotgun is a Doom shotgun if you want one: ten pellets, a tighter spread, a harder
+  kick, a warm muzzle flash, and a red hull with a brass head that tumbles out of the
+  breech, bounces on the flagstones and comes to rest. A gun that fires flashes: a starburst
+  at the muzzle, following the barrel through its kick and gone in a blink, on your shotguns,
+  nailguns and launchers, and on every grunt's gun in the dark ahead of you. The shotguns
+  spit a spray of sparks that leaves the barrel and travels with it; how many, how far they
+  fly and how long they burn is yours to decide.</p>
 
-  <p><strong>The horde.</strong> Wave survival on any map — and, if you let it, a horde
-  that reads you. At the start of each wave it weighs your health and armour, the ammunition
-  for the guns you own, how fast you cleared the last wave and how badly it hurt, and shapes
-  the next: rabble and a breather after a wave that nearly had you; more of the heavies,
-  sooner, when you are fat. It is learning what you can take. With <code>notarget</code> on,
-  the monsters forget you and fight each other, and you can stand among them and watch.</p>
+  <h3>The book of shapes</h3>
+  <p>Every spark, ember, puff and drop the engine throws is drawn from one small book of
+  shapes, and that book is printed sixteen times finer than Quake's own, so a spark a yard
+  from your face keeps its edge and its thread instead of dissolving into a soft round glow.
+  An explosion's embers are hot grains with a rim; blood falls as drops rather than smudges;
+  the sparks off a bullet strike are hot needles rather than soft rays. Smoke and fire wrap
+  the stone instead of being sliced by it: where a puff meets a wall or the floor it thins
+  away rather than ending in a hard line. An explosion's shockwave bends the air, the stone
+  behind the ring warped outward as it passes. Where the ball earths and where the axe
+  strikes, the scorch is left glowing, an orange that cools to black in a few breaths.</p>
 
-  <p><strong>Smaller things.</strong> Hold a key and time eases down. Freeze the world and
-  fly through it with the HUD gone. Quake 3 air control, or a bunnyhop you can hold. Gore
-  from vanilla to ludicrous. And <code>noclip</code> flies where you look.</p>
+  <h3>Fire and venom</h3>
+  <p>Lightning ignites. A bolt sets its victim alight — flame, smoke, a charring skin — and
+  the fire is a real light, so a burning Fiend lights the fog around it and throws its own
+  shadow as it comes at you. A Shambler's lightning sets you alight. The Scrag's spit is
+  acid: a yellow-green light rides it, lighting the wall it passes and the fog it passes
+  through, and it sizzles where it lands, on stone or on you.</p>
+
+  <h3>Explosions, and the feel of the guns</h3>
+  <p>An explosion is a white blink, a bang, a shockwave ring that blinks the room's light
+  with it; a fireball with structure; then hot brown smoke rolling up close in and a slower
+  grey plume above it, embers that fall and bounce, a scorch left on the floor. A teleport
+  is a burst of streaks and motes rather than a cloud of dots. The guns feel their work: a
+  snap from the shotgun, the view shoved back by the super shotgun, a tremor from the
+  nailguns, a real shove from the rocket launcher, a buzz from the thunderbolt, a slow heave
+  from the ball gun. Nails stream from both barrels in turn, every third one drawing a hot
+  streak through the fog, and an axe throws sparks off a wall. Each is its own switch, for
+  anyone who would have the old guns back.</p>
+
+  <h3>The horde</h3>
+  <p>Wave survival on any map — and, if you let it, a horde that reads you. At the start of
+  each wave it weighs your health and armour, the ammunition for the guns you own, how fast
+  you cleared the last wave and how badly it hurt, and shapes the next: rabble and a
+  breather after a wave that nearly had you; more of the heavies, sooner, when you are fat.
+  It is learning what you can take. With <code>notarget</code> on, the monsters forget you
+  and fight each other, and you can stand among them and watch.</p>
+
+  <h3>Smaller things</h3>
+  <p>Hold a key and time eases down. Freeze the world and fly through it with the HUD gone.
+  Quake 3 air control, or a bunnyhop you can hold. Gore from vanilla to ludicrous. Noclip
+  flies where you look.</p>
 
   <h3>The bad torch</h3>
   <p>A handlamp you can carry: warm tungsten, a soft-edged cone, and thoroughly unreliable.
@@ -597,164 +676,154 @@ ignored entirely.</p>
   a hot core and a faint dark ring, like a cheap reflector imaging its filament, on the wall
   and in the fog alike. It can never quite go out. It will simply choose its moment.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  Options → M5 Fun Mods is the page: <code>m5_shotgun</code>, <code>m5_burn</code>,
-  <code>m5_venom</code>, <code>m5_kick</code>, <code>m5_grenadebounce</code>,
-  <code>m5_nailtracer</code> (<code>m5_nailtracer_every</code> for how often),
-  <code>m5_nailbarrels</code>, <code>m5_axesparks</code> (<code>exec feel_off.cfg</code> for
-  the old guns), <code>m5_horde</code> and <code>m5_horde_director</code> (<code>impulse 210</code>
-  next wave, <code>211</code> what it made of you), <code>m5_bullettime</code>,
-  <code>m5_photomode</code>, <code>m5_movement</code>, <code>m5_gore</code>,
-  <code>m5_noclipfly</code>. The muzzle flash is on; <code>m5_muzzleflash 0</code> puts it out,
-  <code>m5_muzzleflash_size</code> for the burst, and <code>m5_muzzleflash_sparks</code> with
-  <code>_speed</code>, <code>_spread</code>, <code>_length</code>, <code>_thickness</code>,
-  <code>_life</code> and <code>_brightness</code> for the shotgun's sparks
-  (<code>exec sparks_reset.cfg</code> puts them back). The finer book of shapes,
-  the drops, the fade against walls, the bending shockwave and the cooling scorch are all on:
-  <code>cl_particles_texsize 64</code> goes back to the old book
-  (<code>exec cells64.cfg</code> / <code>cells256.cfg</code>),
-  <code>cl_particles_blood_droplet 0</code> to the old blood,
-  <code>cl_particles_soft 0</code> to the hard edge
-  (<code>exec soft_off.cfg</code> / <code>soft_on.cfg</code>),
-  <code>cl_particles_refract 0</code> to the plain ring
-  (<code>exec refract_off.cfg</code> / <code>refract_on.cfg</code>),
-  <code>cl_particles_scorchglow 0</code> to the dark scorch alone
-  (<code>exec scorchglow_off.cfg</code> / <code>scorchglow_on.cfg</code>),
-  the corners' dark, the light under water and the hardening shadows are on:
-  <code>rt_metal_gi_ao 0</code>
-  (<code>exec gi_ao_off.cfg</code> / <code>gi_ao_on.cfg</code>),
-  <code>rt_metal_fog_liquidlight 0</code>
-  (<code>exec fog_liquidlight_off.cfg</code> / <code>_on.cfg</code>),
-  <code>rt_metal_contact 0</code>
-  (<code>exec contact_off.cfg</code> / <code>contact_on.cfg</code>),
-  the lights keep their own counsel now —
-  <code>rt_metal_shadowlights 1</code> lets them shine through the walls again
-  (<code>exec spotfix_off.cfg</code> / <code>spotfix_on.cfg</code>), and
-  <code>m5_powerupglow 0</code> gives the Quad back its plain white lamp
-  (<code>exec quadglow_off.cfg</code> / <code>quadglow_on.cfg</code>),
-  the embers, the storm and the pools' light are on too:
-  <code>m5_torch_embers 0</code> stills the flames
-  (<code>exec embers_off.cfg</code> / <code>embers_on.cfg</code>),
-  <code>r_skylightning 0</code> clears the sky, and
-  <code>r_skylightning_fog</code> is how much of a flash reaches the air
-  (<code>exec skylightning_off.cfg</code> / <code>_on.cfg</code>);
-  <code>r_caustics 0</code> stills the pool floors
-  (<code>exec caustics_off.cfg</code> / <code>caustics_on.cfg</code>). The torch wants a key — Options → Customize Controls, or
-  <code>bind f torch</code> — and <code>m5_torch_cone</code>, <code>_softness</code> and
-  <code>_filament</code> shape it. Explosions and teleports are data in
-  <code>m5/effectinfo.txt</code>; <code>cl_particles_reloadeffects</code> re-reads it
-  live.</p>
+  <div class="console">
+    <span class="kicker">At the console &middot; Options → M5 Fun Mods</span>
+    <table>
+      <tr><td><code>m5_shotgun</code></td><td>the Doom shotgun</td></tr>
+      <tr><td><code>m5_muzzleflash</code></td><td>the flash (on); <code>_size</code> the burst; <code>_sparks</code> with <code>_speed</code> <code>_spread</code> <code>_length</code> <code>_thickness</code> <code>_life</code> <code>_brightness</code> the shotgun's sparks (<code>exec sparks_reset.cfg</code> restores them)</td></tr>
+      <tr><td><code>cl_particles_texsize</code></td><td>the book of shapes: 256 the fine book, 64 Quake's own (<code>exec cells256.cfg</code> / <code>cells64.cfg</code>)</td></tr>
+      <tr><td><code>cl_particles_blood_droplet</code></td><td>blood as drops</td></tr>
+      <tr><td><code>cl_particles_soft</code></td><td>smoke that wraps the stone (<code>exec soft_on.cfg</code> / <code>soft_off.cfg</code>)</td></tr>
+      <tr><td><code>cl_particles_refract</code></td><td>the shockwave bending the air (<code>exec refract_on.cfg</code> / <code>refract_off.cfg</code>)</td></tr>
+      <tr><td><code>cl_particles_scorchglow</code></td><td>the cooling scorch (<code>exec scorchglow_on.cfg</code> / <code>scorchglow_off.cfg</code>)</td></tr>
+      <tr><td><code>m5_burn</code> <code>m5_venom</code></td><td>lightning that ignites; acid that sizzles</td></tr>
+      <tr><td><code>m5_kick</code> <code>m5_grenadebounce</code> <code>m5_nailtracer</code> <code>m5_nailbarrels</code> <code>m5_axesparks</code></td><td>the feel of the guns; <code>m5_nailtracer_every</code> how often a nail streaks; <code>exec feel_off.cfg</code> for the old guns</td></tr>
+      <tr><td><code>m5_horde</code> <code>m5_horde_director</code></td><td>the horde, and the horde that reads you; <code>impulse 210</code> next wave, <code>impulse 211</code> what it made of you</td></tr>
+      <tr><td><code>m5_bullettime</code> <code>m5_photomode</code> <code>m5_movement</code> <code>m5_gore</code> <code>m5_noclipfly</code></td><td>the smaller things</td></tr>
+      <tr><td><code>bind f torch</code></td><td>the torch wants a key (or Options → Customize Controls); <code>m5_torch_cone</code> <code>_softness</code> <code>_filament</code> shape it</td></tr>
+      <tr><td><code>m5/effectinfo.txt</code></td><td>explosions and teleports are data; <code>cl_particles_reloadeffects</code> re-reads it live</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section id="dimensions">
   <span class="kicker">VI &middot; Other dimensions</span>
   <h2>Built by other hands</h2>
   <p class="epigraph">Beyond the four episodes there are other dimensions, and they were
   not made for you.</p>
 
-  <p><strong>Single Player → Mission Packs</strong> opens five more doors: <em>Scourge of
-  Armagon</em>, <em>Dissolution of Eternity</em>, <em>Dimension of the Past</em>,
-  <em>Dimension of the Machine</em>, and <em>Arcane Dimensions</em>. Each takes effect at
-  once, without a restart, and everything engine-side comes with you — the traced light, the
-  murk, the water, the thunderbolt, the higher-poly models and the map textures — because
-  none of it lives in a game directory. Each pack keeps its own lighting and its own fog and
-  is levelled to sit beside Quake's rather than glaring or drowning; the colour its mapper
-  chose is kept.</p>
+  <p class="lede"><strong>Single Player → Mission Packs</strong> opens five more doors —
+  <em>Scourge of Armagon</em>, <em>Dissolution of Eternity</em>, <em>Dimension of the
+  Past</em>, <em>Dimension of the Machine</em>, and <em>Arcane Dimensions</em>. Each takes
+  effect at once, without a restart, and everything engine-side comes with you.</p>
 
-  <p><strong>Arcane Dimensions</strong> is a different beast: a total conversion with its
-  own weapons, its own monsters, breakable scenery, secrets, and the largest maps this engine
-  runs. Because it replaces the game's own code, the gameplay mods above stand down inside
-  it; the light, the fog and the lightning do not. Its start map is a hub — walk into a
-  portal. It is also the one place with a sun to switch on.</p>
+  <p>The traced light, the murk, the water, the thunderbolt, the higher-poly models and the
+  map textures follow you into every pack, because none of it lives in a game directory.
+  Each pack keeps its own lighting and its own fog, levelled to sit beside Quake's rather
+  than glaring or drowning, and the colour its mapper chose is kept.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  <code>gamedir m5 hipnotic</code>, <code>rogue</code>, <code>dopa</code>,
-  <code>mg1</code> or <code>ad</code> does what the menu does. Each pack's few settings
-  live in <code>m5/m5pack_&lt;name&gt;.cfg</code>. In Arcane Dimensions the key inventory is
-  <code>impulse 175</code>. Dimension of the Machine's <code>horde</code> maps load but do
-  not play; that mode lives in the rerelease's own engine.</p>
+  <h3>Arcane Dimensions</h3>
+  <p>A different beast: a total conversion with its own weapons, its own monsters, breakable
+  scenery, secrets, and the largest maps this engine runs. Because it replaces the game's
+  own code, the gameplay mods of Part V stand down inside it; the light, the fog and the
+  lightning do not. Its start map is a hub — walk into a portal. It is also the one place
+  with a sun to switch on.</p>
+
+  <div class="console">
+    <span class="kicker">At the console</span>
+    <table>
+      <tr><td><code>gamedir m5 hipnotic</code></td><td>what the menu does; likewise <code>rogue</code>, <code>dopa</code>, <code>mg1</code>, <code>ad</code></td></tr>
+      <tr><td><code>m5/m5pack_&lt;name&gt;.cfg</code></td><td>each pack's few settings</td></tr>
+      <tr><td><code>impulse 175</code></td><td>the key inventory in Arcane Dimensions</td></tr>
+      <tr><td>&nbsp;</td><td>Dimension of the Machine's horde maps load but do not play; that mode lives in the rerelease's own engine</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section id="seeing">
   <span class="kicker">VII &middot; Seeing, and not</span>
   <h2>How dark it should be</h2>
   <p class="epigraph">Quake is a game about not being able to see.</p>
 
-  <p>The stock brightness controls never reached the bottom of that. A single
-  <em>Brightness</em> slider does now: at the middle it is the 1996 look, exactly; at a
-  quarter it is moody and playable if you know the map; at fifteen percent it is gloom and
-  inky corners; at nothing it is almost unplayable, and the torches are all there is. It dims
-  the whole finished picture rather than only the lighting, so the fog goes dark with the
-  rooms instead of glowing on its own.</p>
+  <p class="lede">One Brightness slider reaches from the 1996 look to a black the torches
+  barely hold back. The view breathes when you stand still. On an HDR display the fire is
+  brighter than white, and the glow around it is a glow rather than a smear.</p>
 
+  <h3>Brightness</h3>
+  <p>At the middle of the slider it is the 1996 look, exactly; at a quarter it is moody and
+  playable if you know the map; at fifteen percent it is gloom and inky corners; at nothing
+  it is almost unplayable, and the torches are all there is. It dims the whole finished
+  picture rather than only the lighting, so the fog goes dark with the rooms instead of
+  glowing on its own.</p>
+
+  <h3>The breath behind the eye</h3>
   <p>Stand still for a second or two and the view begins to drift — the slow wander the
   end-of-level camera has always had, as though the thing behind the eye were breathing.
   Touch anything and it is gone inside a quarter of a second. It moves the view, never your
   aim.</p>
 
   <h3>The light off the leash</h3>
-  <p>On a display running in macOS HDR mode, the game can put a muzzle flash, a lava pool
-  or the core of a bolt on the screen <em>brighter than white</em> — brighter than the HUD's
-  digits, which stay at ordinary white on purpose, so the two side by side in one frame are
-  the proof. One switch does all of it. No screenshot can show it; it has to be judged on the
-  glass.</p>
+  <p>On a display running in macOS HDR mode, a muzzle flash, a lava pool or the core of a
+  bolt can be put on the screen brighter than white — brighter than the HUD's digits, which
+  stay at ordinary white on purpose, so the two side by side in one frame are the proof. One
+  switch does all of it. No screenshot can show it; it has to be judged on the glass.</p>
+  <p>The glow around such a thing can be a glow rather than a smear: a bloom that keeps the
+  core hot and lets the light fall away from it across the room, the way a flame reads in a
+  dark hall. It waits at the console.</p>
 
-  <p>And the glow around such a thing can be a glow rather than a smear. The old haze took
-  every bright thing and spread it thin; there is a newer bloom that keeps the core hot and
-  lets the light fall away from it across the room, the way a flame reads in a dark hall. It
-  waits at the console until it has been looked at.</p>
-
-  <p class="console"><span class="kicker">At the console</span>
-  Options → Brightness and Gamma; <code>r_brightness</code> is the slider (0.5 is 1996).
-  <code>rt_metal_ambient</code> is the last flat fill holding the blacks up, if you want
-  them dead. <code>v_idlesway</code> is the drift. <code>r_edr 1</code> is HDR (the
-  <em>HDR (EDR)</em> row on Options → Video Options), <code>r_hdr_shoulder 0.75</code>
-  rolls the brightest parts into the new range, and <code>r_edr_report</code> says what
-  the display is giving you. <code>r_bloom_m5 1</code> is the newer bloom
-  (<code>exec bloom_m5_on.cfg</code>; <code>_threshold</code>, <code>_knee</code>,
-  <code>_intensity</code>, <code>_levels</code> shape it).</p>
+  <div class="console">
+    <span class="kicker">At the console &middot; Options → Brightness and Gamma · Video Options</span>
+    <table>
+      <tr><td><code>r_brightness</code></td><td>the slider; 0.5 is 1996</td></tr>
+      <tr><td><code>rt_metal_ambient</code></td><td>the last flat fill holding the blacks up; 0 for dead blacks</td></tr>
+      <tr><td><code>v_idlesway</code></td><td>the drift</td></tr>
+      <tr><td><code>r_edr 1</code></td><td>HDR — the HDR (EDR) row on Video Options; <code>r_hdr_shoulder 0.75</code> rolls the brightest parts into the new range; <code>r_edr_report</code> says what the display is giving you</td></tr>
+      <tr><td><code>r_bloom_m5 1</code></td><td>the bloom (<code>exec bloom_m5_on.cfg</code>); <code>_threshold</code> <code>_knee</code> <code>_intensity</code> <code>_levels</code> shape it</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section id="sound">
   <span class="kicker">VIII &middot; Sound</span>
   <h2>The room answers</h2>
   <p class="epigraph">You hear the room before you see it.</p>
 
-  <p>Quake's samples are the sound, and they play exactly as they always have. What is
-  added is what the room does to them. Every room has a voice: the engine looks around you
-  as you walk — up, down, along the floor — to see how big the space is and how much sky it
-  can find, and the sound answers accordingly. A crypt rings for a couple of seconds after a
-  shot. A corridor is tight. Open ground is nearly dry. It cross-fades as you pass through a
-  door, so you hear the hall before you are in it. Far sounds are wetter than near ones.</p>
+  <p class="lede">Quake's samples are the sound, and they play exactly as they always have.
+  What is added is what the room does to them: every space has a voice, walls dull what
+  stands behind them, and, if you want it, distance dulls too.</p>
 
+  <h3>The voice of the room</h3>
+  <p>The engine looks around you as you walk — up, down, along the floor — to see how big the
+  space is and how much sky it can find, and the sound answers accordingly. A crypt rings
+  for a couple of seconds after a shot. A corridor is tight. Open ground is nearly dry. It
+  cross-fades as you pass through a door, so you hear the hall before you are in it. Far
+  sounds are wetter than near ones.</p>
+
+  <h3>What the wall keeps back</h3>
   <p>A sound with a wall between you and it is dulled, not only turned down, so a Shambler
-  behind a door is a muffled presence and not a distant one. And, if you want it, distance
-  itself dulls: nothing near you changes, but far across an outdoor map an explosion is the
-  low thud you would hear across a valley. Music goes through none of this.</p>
+  behind a door is a muffled presence and not a distant one. With the air's own absorption
+  on, nothing near you changes, but far across an outdoor map an explosion is the low thud
+  you would hear across a valley. Music goes through none of this.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  <code>snd_reverb</code> (on; <code>snd_reverb_wet</code> the level,
-  <code>_decay</code> the length), <code>snd_occlusion_lowpass</code> (on;
-  <code>snd_occlusion_cutoff</code> how muffled), <code>snd_airabsorb</code> (off;
-  <code>exec airabsorb_on.cfg</code>). The soundtrack: drop <code>track02.ogg</code>,
-  <code>track03.ogg</code> … into <code>id1/music/</code>; each map asks for its own.
-  <code>bgmvolume</code> is its volume.</p>
+  <div class="console">
+    <span class="kicker">At the console</span>
+    <table>
+      <tr><td><code>snd_reverb</code></td><td>the room's voice (on); <code>snd_reverb_wet</code> the level, <code>_decay</code> the length</td></tr>
+      <tr><td><code>snd_occlusion_lowpass</code></td><td>walls that dull (on); <code>snd_occlusion_cutoff</code> how muffled</td></tr>
+      <tr><td><code>snd_airabsorb</code></td><td>distance that dulls (off; <code>exec airabsorb_on.cfg</code>)</td></tr>
+      <tr><td><code>id1/music/</code></td><td>the soundtrack: drop <code>track02.ogg</code>, <code>track03.ogg</code>… here; each map asks for its own; <code>bgmvolume</code> is its volume</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section id="tiers">
   <span class="kicker">IX &middot; Seven ways to run it</span>
   <h2>From 1996 to the full murk</h2>
   <p class="epigraph">The machine has a temperature and a mood. These numbers were taken
   when it had settled into both.</p>
 
-  <p>One control, <strong>Options → M5 Quality</strong>, sets thirty-four things at once and
-  runs from a faithful 1996 to the full murk, with every light shadowed in the fog and every
-  edge filed clean. Every tier but the 1996 one now assembles the picture at a little over a
-  third of the size it is shown at, and — this is the part that matters — traces the light at
-  exactly that size rather than at some other one. The two agreeing is what keeps the
-  silhouettes from climbing; disagreeing was what made them climb, and it cost more, not less.
-  Measured on an M5 at 1080p after the machine had settled, on one heavy scene: the average
-  frame rate, then the worst single second.</p>
+  <p class="lede">One control, <strong>Options → M5 Quality</strong>, sets thirty-four things
+  at once and runs from a faithful 1996 to the full murk, with every light shadowed in the
+  fog and every edge filed clean. Every tier but the first assembles the picture at a little
+  over a third of its shown size, traces the light at that same size, and files the edges
+  last, at the size you see.</p>
+
+  <p>Measured on an M5 at 1080p after the machine had settled, on one heavy scene: the
+  average frame rate, then the worst single second.</p>
 
   <div class="scroll">
   <table>
@@ -763,36 +832,14 @@ ignored entirely.</p>
     </thead>
     <tbody>
       <tr><td>Stock</td><td>351&ndash;364</td><td>292&ndash;329</td><td><strong>1996.</strong> GLQuake as nearly as this engine can manage it: baked lightmaps, disc particles, the animation snapping at ten frames a second, the original id textures. No ray tracing, no fog, no bloom, no HDR, no glow, no shimmer, no enhanced thunderbolt. Your own settings are set aside while it is on and come back untouched when you leave.</td></tr>
-      <tr><td>Superfast</td><td>149&ndash;159</td><td>92&ndash;96</td><td>the traced light and the fog on the smallest buffers, the enlargement done by the simpler of the two upscalers; no per-light shadowing in the fog, no bounce light. It is barely quicker than Fast: below a certain size the fog costs almost nothing, and there is no honest saving left under it that keeps the edges clean</td></tr>
-      <tr><td>Fast</td><td>148&ndash;149</td><td>93&ndash;96</td><td>as Superfast, with every light casting its shadow into the fog again; no bounce light, and a flat memory of the frame before</td></tr>
-      <tr><td>Good</td><td>144&ndash;145</td><td>94&ndash;95</td><td>the fog gets a larger buffer and keeps its full kernel, but remembers only a flat image of the frame before rather than the volume it truly occupies; no bounce light</td></tr>
-      <tr><td>Better</td><td>112&ndash;113</td><td>73&ndash;76</td><td>the fog becomes a <em>volume</em> that remembers itself in three dimensions, and the enlargement becomes the one that accumulates many frames &mdash; the largest single step in the whole ladder, and where the murk stops crawling; no bounce light</td></tr>
-      <tr><td>Best</td><td>102&ndash;103</td><td>55&ndash;69</td><td><strong>the reference look</strong>: all of Better, plus light that bounces once off every surface before it reaches you, so a shadowed corner is lit by the wall beside it rather than painted dark</td></tr>
-      <tr><td>Ultimate</td><td>99&ndash;100</td><td>66&ndash;68</td><td>Best with the fog given the larger of its two buffers. The step is small &mdash; at this size the fog is cheap wherever you put it &mdash; and it is the last one there is</td></tr>
+      <tr><td>Superfast</td><td>149&ndash;159</td><td>92&ndash;96</td><td>The traced light and the fog on the smallest buffers, enlarged by the simpler of the two upscalers; no per-light shadowing in the fog, no bounce light.</td></tr>
+      <tr><td>Fast</td><td>148&ndash;149</td><td>93&ndash;96</td><td>As Superfast, with every light casting its shadow into the fog; no bounce light, and a flat memory of the frame before.</td></tr>
+      <tr><td>Good</td><td>144&ndash;145</td><td>94&ndash;95</td><td>The fog on a larger buffer with its full kernel, still remembering only a flat image of the frame before; no bounce light.</td></tr>
+      <tr><td>Better</td><td>112&ndash;113</td><td>73&ndash;76</td><td>The fog becomes a volume that remembers itself in three dimensions, and the enlargement becomes the one that accumulates many frames &mdash; the largest single step in the ladder, and where the murk stops crawling; no bounce light.</td></tr>
+      <tr><td>Best</td><td>102&ndash;103</td><td>55&ndash;69</td><td><strong>The reference look.</strong> All of Better, plus light that bounces once off every surface before it reaches you, so a shadowed corner is lit by the wall beside it rather than painted dark.</td></tr>
+      <tr><td>Ultimate</td><td>99&ndash;100</td><td>66&ndash;68</td><td>Best with the fog given the larger of its two buffers. The last step there is.</td></tr>
     </tbody>
   </table>
-
-  <p>Where a roof cuts across the sky, or a near thing stands against a far one, the
-  boundary can climb in small steps rather than lying clean. The instinct is to blame the size
-  the picture is assembled at, and the instinct is wrong. What builds the stair is the
-  <em>light</em> being drawn at one size and laid over a picture drawn at another: the
-  enlargement smears each step across two rows, and a filing tool that looks for a step finds
-  only a slope and leaves it alone. Draw the light at the picture's own size, and file the
-  edges last of all at the size you actually see, and the stair goes. Neither half does it
-  alone &mdash; the filing on its own makes the boundary marginally worse &mdash; which is why
-  every tier now ships both and there is nothing here to switch on.</p>
-  <p class="console"><code>r_smaa 1</code> &middot; <code>rt_metal_scale 1</code></p>
-
-  <p>That filing works by nudging the ends of each tread, and so it reaches a stair whose
-  treads are short and leaves one whose treads are long. There is a second kind, which walks
-  the whole length of a tread before it touches anything and then lays the boundary down
-  across all of it at once; on a clean step it removes the stair almost entirely. It asks one
-  thing in return. A boundary it can measure must be a step and not a smear &mdash; and where
-  the light itself is drawn smaller than the room and then enlarged, every edge of light
-  arrives already blurred, and there is nothing left for it to take hold of. Draw the light
-  at full size and the second filing finds its purchase. That costs, as everything that
-  restores a size costs.</p>
-  <p class="console"><code>r_smaa 1</code> &middot; <code>rt_metal_scale 1</code></p>
   </div>
 
   <p class="note">Six of the seven tiers render the scene smaller than the window and hand
@@ -803,107 +850,116 @@ ignored entirely.</p>
   still only reaches 176. A cold machine runs a third faster for its first few minutes and
   then settles; these are the settled numbers.</p>
 
-  <p>There is one switch that belongs to no tier. Bind it to a key and the whole of the
-  above falls away at a press &mdash; the light, the murk, the bounce, the enlargement, the
-  replacement art at the next map &mdash; and 1996 stands in the room instead; press again
-  and everything you had returns exactly as it was. It sets nothing of yours aside for
-  good: what it shows while it is on is never remembered, and a fresh start is always your
-  own picture. A first press after a map has loaded keeps that map&rsquo;s art until the
-  next one.</p>
-  <p class="console"><code>bind F6 "toggle m5_cheap"</code> &middot; <code>m5_cheap</code></p>
+  <h3>The switch that belongs to no tier</h3>
+  <p>Bind it to a key and the whole of the above falls away at a press — the light, the murk,
+  the bounce, the enlargement, the replacement art at the next map — and 1996 stands in the
+  room instead. Press again and everything you had returns exactly as it was. What it shows
+  while it is on is never saved; a fresh start is always your own picture. A first press
+  after a map has loaded keeps that map's art until the next one.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  <code>r_viewscale</code> is the render size (1 = native), <code>r_metalfx</code> the
-  scaler (0 plain, 1 spatial, 2 temporal), both on Options → Video Options.
-  <code>rt_metal_scale</code> and <code>rt_metal_fog_scale</code> size the shadow and fog
-  buffers as fractions of the window. Set any of them by hand and the tier row reads
-  Custom. <code>m5_cheap</code> is the stock/beautiful switch (never saved).</p>
+  <div class="console">
+    <span class="kicker">At the console &middot; Options → Video Options</span>
+    <table>
+      <tr><td><code>r_viewscale</code></td><td>the render size; 1 is native</td></tr>
+      <tr><td><code>r_metalfx</code></td><td>the scaler: 0 plain, 1 spatial, 2 temporal</td></tr>
+      <tr><td><code>rt_metal_scale</code> <code>rt_metal_fog_scale</code></td><td>the shadow and fog buffers as fractions of the window; 1 draws the light at full size and lets the edge filing take a cleaner hold, at a cost</td></tr>
+      <tr><td><code>r_smaa</code></td><td>the edge filing (on)</td></tr>
+      <tr><td><code>bind F6 "toggle m5_cheap"</code></td><td>the 1996 switch; <code>m5_cheap</code> is never saved</td></tr>
+      <tr><td>&nbsp;</td><td>set any of these by hand and the tier row reads <em>Custom</em></td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section id="replay">
   <span class="kicker">X &middot; Replay</span>
   <h2>Watching it back</h2>
   <p class="epigraph">Nothing in a demo is live, and it will still make you flinch.</p>
 
-  <p>The engine can be made to watch itself. <strong>The showreel</strong> plays a set of
-  demos for their themes and adds the features one at a time, every twenty-five seconds or
-  so — the 1996 picture first, then the light, the murk, the ground fog, the dust, the
-  shadows, the bounce; the fog in motion; the lava; the thunderbolt and the ball; the water;
-  the lake; the sound; and a finale of four action demos each run twice, once at Stock and
-  once at Best, with the frame rate left on screen. Nineteen minutes, no hands on the keys,
-  and it puts your settings back when it is done.</p>
+  <p class="lede">The engine can be made to watch itself: a nineteen-minute showreel that
+  adds the features one at a time, and a cinematic capture that renders a picture no tier
+  can play, for a video.</p>
 
-  <p><strong>The cinematic capture</strong> is a picture no tier can play, for a video. The
-  capture does not run in real time — the engine advances the demo a fixed sixtieth of a
-  second per frame however long each frame takes — so the ray tracer can be set far past any
-  tier: native resolution, thirty-two shadow rays a pixel, the fog on a native buffer with a
-  shadow cast at every step, and the result is the same every time it is run.</p>
+  <h3>The showreel</h3>
+  <p>A set of demos plays for its themes, adding a feature every twenty-five seconds or so —
+  the 1996 picture first, then the light, the murk, the ground fog, the dust, the shadows,
+  the bounce; the fog in motion; the lava; the thunderbolt and the ball; the water; the
+  lake; the sound; and a finale of four action demos each run twice, once at Stock and once
+  at Best, with the frame rate left on screen. No hands on the keys, and it puts your
+  settings back when it is done.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  <code>exec showreel.cfg</code>, on Metal, sound on. For a capture:
-  <code>exec cinematic.cfg</code>, then <code>playdemo &lt;name&gt;</code>, then
-  <code>cl_capturevideo 1</code>, in that order; the file lands in <code>m5/video/</code>
-  as an uncompressed AVI (about 180 MB a second at 1080p60 — keep it short, or set
-  <code>cl_capturevideo_width 1280</code>), and <code>exec cinematic_off.cfg</code>
-  before you quit. <code>record &lt;name&gt;</code> records your own demo;
-  <code>playdemo</code> and <code>timedemo</code> play it.</p>
+  <h3>The cinematic capture</h3>
+  <p>The capture does not run in real time. The engine advances the demo a fixed sixtieth of
+  a second per frame however long each frame takes, so the ray tracer can be set far past
+  any tier — native resolution, thirty-two shadow rays a pixel, the fog on a native buffer
+  with a shadow cast at every step — and the result is the same every time it is run.</p>
+
+  <div class="console">
+    <span class="kicker">At the console</span>
+    <table>
+      <tr><td><code>exec showreel.cfg</code></td><td>the showreel, on Metal, sound on</td></tr>
+      <tr><td><code>exec cinematic.cfg</code></td><td>then <code>playdemo &lt;name&gt;</code>, then <code>cl_capturevideo 1</code>, in that order; the file lands in <code>m5/video/</code> as an uncompressed AVI (about 180 MB a second at 1080p60 — keep it short, or set <code>cl_capturevideo_width 1280</code>); <code>exec cinematic_off.cfg</code> before you quit</td></tr>
+      <tr><td><code>record &lt;name&gt;</code></td><td>your own demo; <code>playdemo</code> and <code>timedemo</code> play it</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section id="install">
   <span class="kicker">XI &middot; Another Mac</span>
   <h2>Taking it with you</h2>
   <p class="epigraph">It travels in two pieces, and neither is any use without the
   other.</p>
 
-  <p>The game is two things that live side by side, in any folder you like — inside
-  <em>Applications</em>, in a <em>Games</em> folder, on an external disk:</p>
+  <p class="lede">The app and a <code>packs</code> folder, side by side, in any folder you
+  like. Nothing else needs installing.</p>
 
-  <pre><code>QuakeM5.app
-packs/id1/ …            your copy of Quake
-packs/m5/ …             the mods, models and textures
-packs/hipnotic/ …       and rogue, dopa, mg1, ad</code></pre>
+  <h3>The two pieces</h3>
+<pre><code>MetalQuake.app
+packs/id1/        … your copy of Quake
+packs/m5/         … the mods, models and textures
+packs/hipnotic/   … and rogue, dopa, mg1, ad</code></pre>
+  <p>The app looks for <code>packs</code> next to itself, so the pair can be moved anywhere
+  together — Applications, a Games folder, an external disk — but the app on its own has
+  nothing to run. To add a mission pack, drop its folder into <code>packs</code>; to remove
+  one, delete it, and the menu lists it as absent. No Homebrew, no libraries, no command
+  line.</p>
 
-  <p><code>packs</code> holds the game data. The app looks for that folder next to itself,
-  so the pair can be moved anywhere together, but the app on its own has nothing to run. To
-  add a mission pack, drop its folder into <code>packs</code>; to remove one, delete it and
-  the menu lists it as absent. The app needs nothing else installed — no Homebrew, no
-  libraries, no command line.</p>
+  <h3>First launch on a new Mac</h3>
+  <p>Before anything else, once: open Terminal, paste <code>xattr -dr com.apple.quarantine
+  </code> (with the trailing space), drag the MetalQuake app onto the Terminal window, press
+  Enter. Until that is done, macOS's quarantine either refuses to open the app or runs a
+  hidden copy of it from a temporary folder, where it cannot see <code>packs</code> beside
+  it and says so on its own error screen.</p>
 
-  <p class="note"><strong>First launch on a new Mac, before anything else.</strong> macOS
-  quarantines anything that arrives by download or AirDrop, and that causes both of the
-  failures you might meet: the app refusing to open, or opening and insisting the required
-  files were not found while <code>packs</code> sits right beside it. The second is macOS
-  quietly running a hidden copy of the app from a temporary folder, so it genuinely cannot
-  see its neighbours; the app's own error screen says so when it happens. One Terminal
-  command fixes both, once: open Terminal, paste <code>xattr -dr com.apple.quarantine </code>
-  (with the trailing space), drag the QuakeM5 app onto the Terminal window, press Enter.
-  This is macOS being careful about an app not signed by a paid developer account, not a
-  fault in the build.</p>
-
+  <h3>Settings</h3>
   <p>A settings file travels in the packs, and a Mac that has never run the game adopts it.
-  The moment you quit, the game writes <em>that</em> Mac's settings to its own home folder,
-  and from then on the shipped copy is ignored: a starting point, not a lock. Screen settings
-  live there too — it asks for 1920×1080 exclusive fullscreen — so on a display that differs,
-  set the resolution again in Options → Video.</p>
+  On quitting, the game writes that Mac's own settings to its home folder, and from then on
+  the shipped copy is a starting point, not a lock. Screen settings live there too — it asks
+  for 1920×1080 exclusive fullscreen — so on a display that differs, set the resolution again
+  in Options → Video.</p>
 
-  <p class="console"><span class="kicker">At the console</span>
-  Your settings live in <code>~/Library/Application Support/darkplaces/m5/config.cfg</code>
-  (Finder: Shift-Command-G, paste the path). Quit the game before copying it anywhere; it
-  rewrites the file on exit.</p>
+  <div class="console">
+    <span class="kicker">At the console</span>
+    <table>
+      <tr><td><code>~/Library/Application Support/darkplaces/m5/config.cfg</code></td><td>your settings (Finder: Shift-Command-G, paste the path); quit the game before copying it anywhere, as it rewrites the file on exit</td></tr>
+    </table>
+  </div>
 </section>
 
+<!-- ================================================================ -->
 <section id="limits">
-  <span class="kicker">XII &middot; Honestly</span>
-  <h2>What it does not do</h2>
+  <span class="kicker">XII &middot; The edge of the known</span>
+  <h2>What lies beyond the light</h2>
   <p class="epigraph">Light bounces once here and no further. Some things stay in the dark
   because the way to them has not been found.</p>
 
   <p>The ray tracer composites over a rasterised frame; it is not a path tracer. Light
-  bounces once: shadowed corners take the colour of the room around them, but a second
-  bounce, caustics and mirrors are all outside what this does. The water refracts and does
-  not reflect — the room is never in it. The sun is an option, and the fog beneath it takes
-  no daylight yet. The fog's map of the level is coarse, so a ledge narrower than a few feet
-  can be missed. The plasma globe is drawn as a sphere on the Metal renderer only.</p>
+  bounces once. A second bounce, caustics from lamps, and mirrors are outside what it does.
+  The water refracts and does not reflect — the room is never in it. The sun is an option,
+  and the fog beneath it takes no daylight. The fog's map of the level is coarse, so a ledge
+  narrower than a few feet can be missed. The plasma globe is drawn as a sphere on the Metal
+  renderer only.</p>
 
   <p>And nothing here makes the game easier. The light shows you where the shadows fall;
   it does not show you what is casting them.</p>
@@ -924,5 +980,6 @@ packs/hipnotic/ …       and rogue, dopa, mg1, ad</code></pre>
 </footer>
 
 </main>
-
 </div>
+</body>
+</html>
