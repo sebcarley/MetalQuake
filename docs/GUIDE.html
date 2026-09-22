@@ -917,13 +917,17 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   <h3>The two pieces</h3>
 <pre><code>MetalQuake.app
 packs/id1/        … your copy of Quake
-packs/m5/         … the mods, models and textures
+packs/m5/         … the mods, and the textures and models by other hands
 packs/hipnotic/   … and rogue, dopa, mg1, ad</code></pre>
   <p>The app looks for <code>packs</code> next to itself, so the pair can be moved anywhere
   together — Applications, a Games folder, an external disk — but the app on its own has
   nothing to run. To add a mission pack, drop its folder into <code>packs</code>; to remove
   one, delete it, and the menu lists it as absent. No Homebrew, no libraries, no command
   line.</p>
+  <p>The textures and most of the models are already in <code>packs/m5</code>. The models
+  that pack drew from the commercial remaster are not, since only their owners may hand
+  them on: the Ogre, the Fiend, the Scrag and their kin arrive as id made them until you
+  fetch that pack yourself and drop its models in beside the others.</p>
 
   <h3>First launch on a new Mac</h3>
   <p>Before anything else, once: open Terminal, paste <code>xattr -dr com.apple.quarantine
@@ -943,6 +947,7 @@ packs/hipnotic/   … and rogue, dopa, mg1, ad</code></pre>
     <span class="kicker">At the console</span>
     <table>
       <tr><td><code>~/Library/Application Support/darkplaces/m5/config.cfg</code></td><td>your settings (Finder: Shift-Command-G, paste the path); quit the game before copying it anywhere, as it rewrites the file on exit</td></tr>
+      <tr><td><code>packs/m5/progs/</code></td><td>the rest of the models: <a href="https://github.com/NightFright2k19/quake_authmdl/releases">Authentic Model Improvements r26</a>, the <code>.mdl</code> files from its <code>id1/progs</code> — never its <code>progs.dat</code></td></tr>
     </table>
   </div>
 </section>

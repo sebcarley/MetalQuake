@@ -480,7 +480,12 @@ text files beside them): the Quake Revitalization Project's map textures, and
 the community-made models from Authentic Model Improvements r26 -- all of them
 except the ones that pack converted from the commercial Quake remaster, which
 are left out because nobody but their owners may distribute them (the engine
-falls back to Quake's own models for those). Delete the .pk3 or the progs
+falls back to Quake's own models for those). TO GET THE REST OF THE MODELS --
+the Ogre, Fiend, Scrag, Vore, Zombie, Enforcer, Death Knight, Chthon, Spawn,
+Rotfish and the rocket launcher -- download the pack yourself, free:
+    https://github.com/NightFright2k19/quake_authmdl/releases  (auth_mdl-r26.zip)
+and copy the .mdl files from its id1/progs into packs/m5/progs (NOT its
+progs.dat, which would replace this game's code). Delete the .pk3 or the progs
 folder to play with Quake's originals, or select the Stock tier.
 
 Optional extras (not included, their owners' work)
