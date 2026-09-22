@@ -85,6 +85,11 @@ qbool MP_ConsoleCommand(const char *text, size_t textlen);
 void MR_Init_Commands (void);
 void MR_Init (void);
 void MR_Restart (void);
+// m5_cheap, the stock/beautiful switch (menu.c): Host_SaveConfig brackets the
+// config write with these so the player's OWN lever values are archived, never
+// the Stock overlay's.
+void M5_Cheap_ConfigWriteBegin(void);
+void M5_Cheap_ConfigWriteEnd(void);
 extern void (*MR_KeyEvent) (int key, int ascii, qbool downevent);
 extern void (*MR_Draw) (void);
 extern void (*MR_ToggleMenu) (int mode);

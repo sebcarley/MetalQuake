@@ -1707,6 +1707,7 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 	unsigned char zeroopaque[4], zerotrans[4];
 	sizebuf_t miptexsb;
 	char vabuf[1024];
+	qbool stockart;
 	Vector4Set(zeroopaque, 0, 0, 0, 255);
 	Vector4Set(zerotrans, 0, 0, 0, 128);
 
@@ -1883,9 +1884,28 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 				name[j] += 'a' - 'A';
 
 		tx = loadmodel->data_textures + i;
+		// STOCK MODE (m5_stock): load the ORIGINAL id art from the BSP/WAD and
+		// never a replacement image. Two arms below try external images -- the
+		// q3-shader path here (which succeeds on a bare image with no shader,
+		// see m5_liquidflags) and the R_SkinFrame_LoadExternal pair further
+		// down -- and stock skips BOTH, while a REAL q3 shader (Arcane Dimensions
+		// authors its textures that way) is still honoured. It is the only part of
+		// stock that is a LOAD-TIME decision, so it takes effect on the next map
+		// load, like r_volumetric_fieldcell.
+		//
+		// 2026-09-22: the first cut gated only the second arm, and gated the
+		// INTERNAL load with it. So a QRP-covered world texture was loaded by the
+		// first arm exactly as before (stock never actually gave 1996 textures),
+		// and a texture with NO replacement image -- the ammo and health boxes'
+		// b_*.bsp textures -- was loaded by nobody and drew as the "NO TEXTURE
+		// FOUND" checker. Seb: "sometimes the textures don't load in stock mode
+		// for ammo boxes and health".
+		stockart = cls.state != ca_dedicated && m5_stock.integer
+			&& !Mod_LookupQ3Shader(va(vabuf, sizeof(vabuf), "%s/%s", mapname, name))
+			&& !Mod_LookupQ3Shader(name);
 		// try to load shader or external textures, but first we have to backup the texture_t because shader loading overwrites it even if it fails
 		backuptex = loadmodel->data_textures[i];
-		if (name[0] && /* HACK */ strncmp(name, "sky", 3) /* END HACK */ && (Mod_LoadTextureFromQ3Shader(loadmodel->mempool, loadmodel->name, loadmodel->data_textures + i, va(vabuf, sizeof(vabuf), "%s/%s", mapname, name), false, false, TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, MATERIALFLAG_WALL) ||
+		if (name[0] && !stockart && /* HACK */ strncmp(name, "sky", 3) /* END HACK */ && (Mod_LoadTextureFromQ3Shader(loadmodel->mempool, loadmodel->name, loadmodel->data_textures + i, va(vabuf, sizeof(vabuf), "%s/%s", mapname, name), false, false, TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, MATERIALFLAG_WALL) ||
 		                Mod_LoadTextureFromQ3Shader(loadmodel->mempool, loadmodel->name, loadmodel->data_textures + i, va(vabuf, sizeof(vabuf), "%s"   , name), false, false, TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, MATERIALFLAG_WALL)))
 		{
 			// set the width/height fields which are used for parsing texcoords in this bsp format
@@ -1946,18 +1966,18 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 			tx->surfaceflags = mod_q1bsp_texture_solid.surfaceflags;
 		}
 
-		// STOCK MODE skips the external replacement image entirely, so the
-		// ORIGINAL id art is loaded from the BSP/WAD below instead of QRP's.
-		// It is the only part of stock that is a LOAD-TIME decision, so it
-		// takes effect on the next map load -- r_volumetric_fieldcell behaves
-		// the same way. Note this arm is also the one that `continue`s past
-		// both material-classification blocks (see m5_liquidflags), so skipping
-		// it takes the name-based classification path, which is the correct one.
-		if (cls.state != ca_dedicated && !m5_stock.integer)
+		// STOCK MODE (stockart, above) skips the two external attempts here and
+		// the external sky below; the INTERNAL load from the BSP/WAD always runs.
+		if (cls.state != ca_dedicated)
 		{
-			skinframe_t *skinframe = R_SkinFrame_LoadExternal(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s/%s", mapname, tx->name), TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, false, false);
-			if ((!skinframe &&
-			    !(skinframe = R_SkinFrame_LoadExternal(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s", tx->name), TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, false, false)))
+			skinframe_t *skinframe = NULL;
+			if (!stockart)
+			{
+				skinframe = R_SkinFrame_LoadExternal(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s/%s", mapname, tx->name), TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, false, false);
+				if (!skinframe)
+					skinframe = R_SkinFrame_LoadExternal(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s", tx->name), TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, false, false);
+			}
+			if (!skinframe
 				// HACK: It loads custom skybox textures as a wall if loaded as a skinframe.
 				|| !strncmp(tx->name, "sky", 3))
 			{
@@ -1982,8 +2002,8 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 				}
 				else if (!strncmp(tx->name, "sky", 3) && mtwidth == mtheight * 2)
 				{
-					data = loadimagepixelsbgra(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s/%s", mapname, tx->name), false, false, false, NULL);
-					if (!data)
+					data = stockart ? NULL : loadimagepixelsbgra(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s/%s", mapname, tx->name), false, false, false, NULL);
+					if (!data && !stockart)
 						data = loadimagepixelsbgra(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s", tx->name), false, false, false, NULL);
 					if (data && image_width == image_height * 2)
 					{

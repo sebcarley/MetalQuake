@@ -80,6 +80,14 @@ static int gStatus = -1;          // its exit status (0 == all passed)
 - (void)testSoundRoomReverb      { [self assertCheck:@"snd: the room reverb reads the level"]; }
 - (void)testSoundDumpCloses      { [self assertCheck:@"snd: the mix dump closes with bytes in it"]; }
 - (void)testSoundAirAbsorb       { [self assertCheck:@"snd: air absorption armed on a far sound (B3)"]; }
+- (void)testStockWadArt          { [self assertCheck:@"stock: the world loads the original wad art"]; }
+- (void)testStockNoReplacement   { [self assertCheck:@"stock: the replacement image is not loaded"]; }
+- (void)testStockShellBox        { [self assertCheck:@"stock: the shell box has its own texture"]; }
+- (void)testCheapOn              { [self assertCheck:@"cheap: the stock overlay goes on"]; }
+- (void)testCheapOff             { [self assertCheck:@"cheap: and the player's look comes back"]; }
+- (void)testCheapConfigRtMetal   { [self assertCheck:@"cheap: quitting with it on archives the player's own rt_metal"]; }
+- (void)testCheapConfigViewscale { [self assertCheck:@"cheap: and the player's own render scale"]; }
+- (void)testCheapNotArchived     { [self assertCheck:@"cheap: the overlay itself is never archived"]; }
 - (void)testLiquidOwnLightArmed  { [self assertCheck:@"rt: liquid own light armed on e1m1's slime"]; }
 - (void)testLiquidPairOn         { [self assertCheck:@"rt: liquid pair switched on (C2)"]; }
 - (void)testLiquidPairBLAS       { [self assertCheck:@"rt: blended liquid acceleration structure built"]; }

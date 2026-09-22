@@ -1501,6 +1501,50 @@ CFGEOF
 	check  "snd: air absorption armed on a far sound (B3)" "snd: air absorption armed" "$LOG_S"   # first-event, developer 1; dm4's ambients sit well past 300 units of the spawn
 	rm -f "$LOG_S" "$SNDWAV" m5/smoketest_s.cfg
 
+	# --- run V: STOCK ART and the stock/beautiful switch (2026-09-22) ---------
+	# Under m5_stock the loader must take the ORIGINAL art from the WAD/BSP for
+	# every texture -- the first cut gated only one of the two external-image
+	# arms (so QRP loaded anyway) and gated the internal load with it, so the
+	# ammo/health boxes QRP does not cover drew the "NO TEXTURE FOUND" checker.
+	# r_texturestats lists every loaded texture with its source: `palette` is
+	# the wad art, `bgra` an external image. e1m3 loads b_shell0.bsp, whose
+	# shot0sid is one of the textures nobody loaded. m5_stock is CF_ARCHIVE and
+	# the sandbox is shared, so it is set back to 0 in-boot (the skip is a
+	# load-time decision, so the listing is unaffected).
+	cat > m5/smoketest_v.cfg <<'CFGEOF'
+rt_metal 0
+r_volumetric 0
+defer 2 "map e1m3"
+defer 7 "m5_stock 0"
+defer 7.5 "r_texturestats"
+defer 8 "m5_cheap 1"
+defer 9 "m5_cheap 0"
+defer 10 "quit"
+CFGEOF
+	LOG_V=$(mktemp)
+	$DP -window -nosound +m5_stock 1 +exec smoketest_v.cfg >"$LOG_V" 2>&1
+	check  "stock: the world loads the original wad art"        "palette +loaded mip +wizwood1_5" "$LOG_V"
+	absent "stock: the replacement image is not loaded"         "bgra +loaded mip +wizwood1_5"    "$LOG_V"   # teeth only with a texture pack installed (QRP here)
+	check  "stock: the shell box has its own texture"           "palette +loaded mip +shot0sid"  "$LOG_V"
+	check  "cheap: the stock overlay goes on"                   "M5: stock look on"              "$LOG_V"
+	check  "cheap: and the player's look comes back"            "M5: your own look is back"      "$LOG_V"
+	rm -f "$LOG_V" m5/smoketest_v.cfg
+	# The config hazard, in its OWN userdir: quit with the overlay ON and the
+	# saved config must carry the player's values, never the Stock row's.
+	SANDBOX_V=$(mktemp -d)
+	mkdir -p "$SANDBOX_V/m5"
+	cat > "$SANDBOX_V/m5/smoketest_v2.cfg" <<'CFGEOF'
+defer 2 "map dm4"
+defer 7 "m5_cheap 1"
+defer 8 "quit"
+CFGEOF
+	LOG_V=$(mktemp)
+	./darkplaces-sdl -userdir "$SANDBOX_V" -window -nosound +rt_metal 1 +r_viewscale 0.5 +exec smoketest_v2.cfg >"$LOG_V" 2>&1
+	check  "cheap: quitting with it on archives the player's own rt_metal" '"rt_metal" "1"'        "$SANDBOX_V/m5/config.cfg"
+	check  "cheap: and the player's own render scale"                    '"r_viewscale" "0.5'     "$SANDBOX_V/m5/config.cfg"
+	absent "cheap: the overlay itself is never archived"                 '"m5_cheap"'             "$SANDBOX_V/m5/config.cfg"
+	rm -rf "$SANDBOX_V" "$LOG_V"
+
 	# --- run Z: demo16, the all-live playback (NEW, 2026-08-21) --------------
 	# Seb's own recording (e3m3, real play, ~70 seconds of fighting) played
 	# back with the WHOLE live stack on the DEFAULT renderer -- temporal

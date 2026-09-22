@@ -242,7 +242,13 @@ void Host_SaveConfig(const char *file)
 			Con_Printf("Saving config to %s ...\n", file);
 
 		Key_WriteBindings (f);
+#ifdef CONFIG_MENU
+		M5_Cheap_ConfigWriteBegin();   // the stock overlay must never be archived
+#endif
 		Cvar_WriteVariables (&cvars_all, f);
+#ifdef CONFIG_MENU
+		M5_Cheap_ConfigWriteEnd();
+#endif
 #ifdef __EMSCRIPTEN__
 		js_syncFS(false);
 #endif

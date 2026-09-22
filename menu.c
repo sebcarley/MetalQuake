@@ -2273,6 +2273,79 @@ static void M5_ApplyQuality(int tier)
 		Cvar_SetValueQuick(m5_quality_levers[i].cv, m5_quality_levers[i].v[tier]);
 }
 
+// ===========================================================================
+// m5_cheap -- THE STOCK/BEAUTIFUL SWITCH (2026-09-22). Seb: "I want to make
+// that a cvar toggle so I can bind it as a cheap/metal switch, so the user can
+// switch on and off freely in gameplay between a 'stock' and beautiful setting
+// on the fly." The shape is the video captures' pre-roll (the cheap picture
+// while nothing is being recorded, the full one when it is), made a switch.
+//
+// 1 SNAPSHOTS every lever in m5_quality_levers[] and applies the Stock row --
+// the 1996 picture the Stock tier gives, whatever the player's own tier is --
+// and 0 puts the snapshot back exactly. It is the tier table's own machinery
+// (M5_ApplyQuality(0)), so a retier reaches it for free and the M5 Quality row
+// honestly reads Stock while it is on. NOT archived: it is a session overlay,
+// and a boot always starts on the player's own look.
+//
+// The one trap is the config write. The levers are archived cvars, so quitting
+// (or a gamedir change, or `saveconfig`) while the overlay is on would archive
+// the Stock row over the player's real settings -- the "archived value beats a
+// changed default" class from the other side. Host_SaveConfig therefore brackets
+// Cvar_WriteVariables with M5_Cheap_ConfigWriteBegin/End: the snapshot is put
+// back for the write and the Stock row re-applied after it. No frame renders in
+// between, so the static-parm sites (which compare per frame) never see the
+// excursion.
+//
+// A tier click while the overlay is on drops the overlay first (the click means
+// "I want this tier"); anything set at the console while it is on is discarded
+// when it comes off, and the help says so.
+// ===========================================================================
+cvar_t m5_cheap = {CF_CLIENT, "m5_cheap", "0", "THE STOCK/BEAUTIFUL SWITCH: 1 shows the 1996 picture (the Stock tier -- ray tracer off, fog off, baked lightmaps, original art on the next map load) and 0 puts your own settings back exactly. A session overlay, never saved: bind it to a key with bind F6 \"toggle m5_cheap\" and flip freely in play. Your settings are snapshotted the moment it goes on, so anything you change at the console while it is on is lost when it comes off; click a tier on Options -> M5 Quality and the overlay comes off first"};
+static float m5_cheap_saved[sizeof(m5_quality_levers) / sizeof(m5_quality_levers[0])];
+static qbool m5_cheap_have;
+
+static void M5_Cheap_Set(qbool on)
+{
+	size_t i, n = sizeof(m5_quality_levers) / sizeof(m5_quality_levers[0]);
+	if (on && !m5_cheap_have)
+	{
+		for (i = 0; i < n; i++)
+			m5_cheap_saved[i] = m5_quality_levers[i].cv->value;
+		m5_cheap_have = true;
+		M5_ApplyQuality(0);   // the Stock row
+		Con_Printf("M5: stock look on (m5_cheap 1) -- your settings are kept and come back at 0\n");
+	}
+	else if (!on && m5_cheap_have)
+	{
+		m5_cheap_have = false;
+		for (i = 0; i < n; i++)
+			Cvar_SetValueQuick(m5_quality_levers[i].cv, m5_cheap_saved[i]);
+		Con_Printf("M5: your own look is back (m5_cheap 0)\n");
+	}
+}
+
+static void M5_Cheap_Callback(cvar_t *var)
+{
+	M5_Cheap_Set(var->integer != 0);
+}
+
+// Host_SaveConfig's bracket: write the player's OWN values, never the overlay's.
+void M5_Cheap_ConfigWriteBegin(void)
+{
+	size_t i;
+	if (!m5_cheap_have)
+		return;
+	for (i = 0; i < sizeof(m5_quality_levers) / sizeof(m5_quality_levers[0]); i++)
+		Cvar_SetValueQuick(m5_quality_levers[i].cv, m5_cheap_saved[i]);
+}
+
+void M5_Cheap_ConfigWriteEnd(void)
+{
+	if (!m5_cheap_have)
+		return;
+	M5_ApplyQuality(0);
+}
+
 // Enter/right = up a tier, left = down, wrapping; from Custom the first press
 // lands on Better whichever way it goes -- the kernel-on tier nearest the
 // reference look, so an exploratory click from a kernel-on config never flips
@@ -2281,7 +2354,12 @@ static void M5_ApplyQuality(int tier)
 // silently become Good.
 static void M5_CycleQuality(int dir)
 {
-	int cur = M5_DetectQuality();
+	int cur;
+	// a tier click is a real choice: drop the stock overlay first (this also
+	// puts the snapshot back, so cur is read from the player's own values)
+	if (m5_cheap.integer)
+		Cvar_SetValueQuick(&m5_cheap, 0);
+	cur = M5_DetectQuality();
 	M5_ApplyQuality(cur < 0 ? M5_QUALITY_CUSTOM_LANDS
 		: (cur + dir + M5_QUALITY_TIERS) % M5_QUALITY_TIERS);
 }
@@ -6948,6 +7026,8 @@ void MR_Init_Commands(void)
 	Cvar_RegisterVariable (&forceqmenu);
 	Cvar_RegisterVariable (&menu_options_colorcontrol_correctionvalue);
 	Cvar_RegisterVariable (&menu_progs);
+	Cvar_RegisterVariable (&m5_cheap);
+	Cvar_RegisterCallback (&m5_cheap, M5_Cheap_Callback);
 	Cmd_AddCommand(CF_CLIENT, "menu_restart", MR_Restart_f, "restart menu system (reloads menu.dat)");
 	Cmd_AddCommand(CF_CLIENT, "togglemenu", Call_MR_ToggleMenu_f, "opens or closes menu");
 }

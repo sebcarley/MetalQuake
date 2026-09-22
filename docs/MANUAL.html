@@ -1580,6 +1580,21 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   floor still only reaches 176. Prefer native rendering on another tier? Set
   <code>r_viewscale 1</code> in the console &mdash; the row then reads Custom.</p>
 
+  <p><strong>The stock/beautiful switch (22 September).</strong> <code>m5_cheap 1</code>
+  snapshots every lever in the tier table and applies the Stock row &mdash; the ray tracer
+  and the volumetric fog off, baked lightmaps, disc particles, the animation snap, and the
+  original id art from the next map load &mdash; and <code>m5_cheap 0</code> puts the
+  snapshot back exactly, whatever tier or custom mix you were on. Bind it:
+  <code>bind F6 "toggle m5_cheap"</code>, and flip it freely in play; each flip pays the
+  one-off shader rebuild hitch a Stock tier click pays. It is a session overlay and is never
+  saved: quitting, changing gamedir or <code>saveconfig</code> with it on writes your own
+  values to the config, not the Stock ones, and every launch starts on your own picture.
+  Two consequences of the snapshot. Anything you change at the console while it is on is
+  discarded when it comes off; and clicking a tier on Options &rarr; M5 Quality takes the
+  overlay off first, because the click means you want that tier. While it is on the M5
+  Quality row honestly reads Stock. The replacement-art skip is a map-load decision, so a
+  first press mid-map keeps that map&rsquo;s art until the next one loads.</p>
+
   <p class="note">Two switches that cost nothing and are kept for the record.
   <code>exec asskip.cfg</code> (the default) stops the ray tracer rebuilding its picture of
   the monsters and torches on frames where none of them moved &mdash; a fifth to a third of

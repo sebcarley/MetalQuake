@@ -1194,6 +1194,27 @@ load, the **replacement world textures**, so the original id art loads instead. 
 adds `rt_metal 0`, `r_volumetric 0`, `cl_particles_quake 1` (GLQuake's disc particles) and
 `r_lerpmodels 0` (the 10 fps animation snap).
 
+**`m5_cheap` (not archived, default 0) is the stock/beautiful SWITCH** (2026-09-22): 1
+snapshots every lever in the tier table and applies the Stock row; 0 puts the snapshot back
+exactly. `bind F6 "toggle m5_cheap"` and flip it in play (each flip pays the same one-off
+shader rebuild hitch a Stock tier click pays). It is a session overlay: `Host_SaveConfig`
+brackets the config write so the player's own values are archived even when quitting with
+it on, and a fresh boot always starts on the player's own look. Anything changed at the
+console while it is on is discarded when it comes off; a tier click on the M5 Quality row
+takes the overlay off first. The replacement-art skip below is a map-load decision, so a
+first press mid-map keeps that map's art until the next load.
+
+**The original art under stock, fixed 2026-09-22.** The first cut of the texture skip gated
+only the second of the two external-image arms in `Mod_Q1BSP_LoadTextures` -- and the
+q3-shader path above it succeeds on a bare replacement image with no shader, so QRP loaded
+exactly as before (measured on e1m3: 131 MB of textures under stock on the old binary, 21.5 MB
+now). Worse, where the gate did fire it skipped the INTERNAL load too, so a texture with
+no replacement image -- the shell, battery and rocket boxes' `shot0sid`, `shot0top`,
+`batt0top`, `rockettop`, and the e1m3 sky -- was loaded by nobody and drew the "NO TEXTURE
+FOUND" checker. Seb: "sometimes the textures don't load in stock mode for ammo boxes and
+health." Both arms are gated now (a REAL q3 shader, Arcane Dimensions' kind, is still
+honoured) and the internal load always runs.
+
 **Two things it deliberately does and does not do.** It does NOT change the texture
 filter: GLQuake 1.09 was *bilinear* — chunky nearest-neighbour is software Quake — so the
 default is already period. And it DOES override the whole tone chain (`r_brightness`,
