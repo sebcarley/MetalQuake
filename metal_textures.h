@@ -46,6 +46,23 @@ once, by name.
 
 #include "qtypes.h"
 
+// Apple-GPU texture size limits, and the one predicate every runtime-sized
+// texture should pass before newTextureWithDescriptor:. OUTSIDE the feature
+// guard on purpose: rt_metal.m (which never sees vid_t) and vid_sdl.c both read
+// these, and vid_sdl.c publishes them as vid.maxtexturesize_2d/_3d, so there is
+// one definition. Metal's texture-descriptor validation is ALWAYS on, not only
+// under the API-validation layer: an out-of-range descriptor makes
+// newTextureWithDescriptor: abort() the process instead of returning nil. That
+// was both 2026-09-18 crashes -- the froxel fog volume past the 3D limit.
+#define METAL_MAX_TEX2D 16384
+#define METAL_MAX_TEX3D 2048
+static inline int Metal_Texture_SizeFits(int is3d, int width, int height, int depth)
+{
+	int lim = is3d ? METAL_MAX_TEX3D : METAL_MAX_TEX2D;
+	return width >= 1 && height >= 1 && depth >= 1
+	    && width <= lim && height <= lim && (!is3d || depth <= lim);
+}
+
 // Feature-guarded for the same reason metal_backend.h is: metal_textures.o
 // lives in makefile.inc's OBJ_METAL_MACOS (macOS client only) while its caller
 // gl_textures.c is in OBJ_COMMON and links into the dedicated server too. This

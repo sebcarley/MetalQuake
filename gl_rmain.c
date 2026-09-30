@@ -130,6 +130,18 @@ cvar_t r_wateralpha = {CF_CLIENT | CF_ARCHIVE, "r_wateralpha","1", "opacity of w
 cvar_t r_wateralpha_force = {CF_CLIENT | CF_ARCHIVE, "r_wateralpha_force", "0", "honour r_wateralpha even on maps whose vis data was not built for transparent water (all stock id1 maps). Vanilla vis may cull underwater geometry seen from above the surface, so distant pool interiors can be missing -- with the volumetric liquid murk on, the murk hides that long before it shows"};
 cvar_t r_dynamic = {CF_CLIENT | CF_ARCHIVE, "r_dynamic","1", "enables dynamic lights (rocket glow and such)"};
 cvar_t r_fullbrights = {CF_CLIENT | CF_ARCHIVE, "r_fullbrights", "1", "enables glowing pixels in quake textures (changes need r_restart to take effect)"};
+// M5 (VKRT slice 2, 2026-09-28): a replacement texture pack's glow layer is
+// authored at whatever level the pack's artist chose, and QRP chose DIM --
+// sliplite_luma.tga peaks at 72 of 255 where the 1996 miptex's fullbright
+// texels sit at 103..255 (the slipgate's red strips), the animated +Nslip
+// panels' lumas at 77-112. FTE without a pack shows the 1996 emission at
+// full palette brightness, which is the glow Seb saw there. The calibration
+// rescales a replacement glow layer UP to the miptex's own fullbright peak
+// at load, capped, never down, and only where the miptex HAS fullbright
+// texels -- so it cannot invent glow on the 112 surfaces QRP gives a luma
+// for the first time. r_hdr_glowintensity stays the player's.
+cvar_t m5_lumacalibrate = {CF_CLIENT | CF_ARCHIVE, "m5_lumacalibrate", "1", "DEFAULT 1 since 2026-09-28 on Seb's eye (\"luma on ... seems fine\"). Rescale a replacement texture pack's glow (_glow/_luma) layer to the 1996 texture's own fullbright peak at map load, so a slipgate's light strips glow as brightly through QRP as they did in the original palette. Only textures whose original miptex has fullbright texels are touched, and only upward (capped by m5_lumacalibrate_max); a luma on a surface the 1996 art never lit is left alone. 0 = the pack's layer as authored (exec luma_off.cfg). Takes effect on the next map load; a texture already cached from an earlier map keeps its earlier scaling until r_restart"};
+cvar_t m5_lumacalibrate_max = {CF_CLIENT, "m5_lumacalibrate_max", "4", "the most m5_lumacalibrate may multiply a replacement glow layer by (QRP's slipgate lumas want about x2.3-x3.5)"};
 cvar_t r_shadows = {CF_CLIENT | CF_ARCHIVE, "r_shadows", "0", "casts fake stencil shadows from models onto the world (rtlights are unaffected by this); when set to 2, always cast the shadows in the direction set by r_shadows_throwdirection, otherwise use the model lighting."};
 cvar_t r_shadows_darken = {CF_CLIENT | CF_ARCHIVE, "r_shadows_darken", "0.5", "how much shadowed areas will be darkened"};
 cvar_t r_shadows_throwdistance = {CF_CLIENT | CF_ARCHIVE, "r_shadows_throwdistance", "500", "how far to cast shadows from models"};
@@ -160,6 +172,7 @@ extern cvar_t rt_metal_liquids_minlight;
 extern cvar_t rt_metal_liquids_own;          // SEPTEMBER2 C1: the liquid surface's OWN light term, per batch
 extern cvar_t rt_metal_liquids_own_shadows;
 extern cvar_t rt_metal_liquids_rt;           // SEPTEMBER2 C2: the per-pixel liquid pair (own term + reflection)
+extern cvar_t rt_metal_liquids_ripple;       // VKRT slice 1: the pair's reflection read displaced by the water surface's ripple
 extern cvar_t rt_metal_fog;
 extern cvar_t rt_metal_fog_intensity;
 extern cvar_t rt_metal_fog_upsample;        // depth-aware magnification of the fog kernel's buffer
@@ -331,6 +344,12 @@ cvar_t r_watersurface_tint_red = {CF_CLIENT | CF_ARCHIVE, "r_watersurface_tint_r
 cvar_t r_watersurface_tint_green = {CF_CLIENT | CF_ARCHIVE, "r_watersurface_tint_green", "0.8", "tint of the view refracted through water, green"};
 cvar_t r_watersurface_tint_blue = {CF_CLIENT | CF_ARCHIVE, "r_watersurface_tint_blue", "0.7", "tint of the view refracted through water, blue"};
 cvar_t r_watersurface_clear = {CF_CLIENT | CF_ARCHIVE, "r_watersurface_clear", "1", "how thick the in-water murk is when you look INTO water from the air, as a fraction of r_volumetric_waterdensity. 1 = the same murk as when submerged, which is what Seb chose on 2026-09-13 (\"1.0 is right\") -- deep pools hide their bottoms, shallow ones stay readable; 0 = FTE's crystal-clear water from the bank; the submerged view keeps the full density, eased over a fraction of a second at the waterline. A pool you can see into from the bank and a murk you cannot see through once you are in it are the same water"};
+cvar_t r_watersurface_reflect = {CF_CLIENT | CF_ARCHIVE, "r_watersurface_reflect", "4", "VKRT 1b (2026-09-27; DEFAULT 4 since 2026-09-28 on Seb's eye: \"exec watersurface_reflect4.cfg looks great. Make that stick\"): the room REFLECTED in the water, screen-space -- the view ray mirrored about the surface's own ripple, marched against the scene depth, and where it lands the composited frame's pixel is mixed in at the surface's Fresnel share times this gain (1 = the physical share on the rippled normal: a few per cent looking thirty degrees down, a fifth at a grazing look; 2 and 4 for a mirror the eye can read from above). Reflects what the screen has drawn -- a lamp with its glow, a torch, the bolt -- and cannot reflect what is off-screen (the ceiling straight above, a lamp behind you); there the pair's flat reflection fills in when rt_metal_liquids_rt is on, else the refracted view stays. Needs r_watersurface and the water rendering blended (r_wateralpha_force on a stock map). No RT pair, no kernel: it works on both renderers. 0 = the old text"};
+cvar_t r_watersurface_reflect_steps = {CF_CLIENT, "r_watersurface_reflect_steps", "32", "screen-space reflection: how many depth samples the march takes along the reflected ray's screen path before giving up (4-64; each hit is then refined by four bisections). More finds thin things at a grazing march; 32 is about twelve pixels a step over half a 405-row raster"};
+cvar_t r_watersurface_reflect_thickness = {CF_CLIENT, "r_watersurface_reflect_thickness", "24", "screen-space reflection: how far behind the scene (world units, plus two per cent of the distance) a marched point may sit and still count as having hit it. Larger closes the gaps a coarse march leaves on oblique surfaces; too large lets the ray hit the back of a torch on the bank"};
+cvar_t r_watersurface_reflect_dist = {CF_CLIENT, "r_watersurface_reflect_dist", "2048", "screen-space reflection: the reflected ray's length in world units. The march covers its whole screen path in r_watersurface_reflect_steps steps, so a longer ray is a coarser step"};
+cvar_t r_watersurface_reflect_ripple = {CF_CLIENT | CF_ARCHIVE, "r_watersurface_reflect_ripple", "0.35", "screen-space reflection: how much of the surface's ripple bends the MIRROR. The ripple normal (r_watersurface_bump, 4) tilts up to fifty degrees, right for the Fresnel sparkle and the refraction's tenth-of-a-screen shift and far too much for a mirror -- steered by it the reflected ray points into the floor or behind the eye and the march finds nothing (measured 2026-09-27). 0 = a flat mirror (calm water), 0.35 breaks the image up in the ripple without losing it, 1 = the full normal"};
+cvar_t r_watersurface_reflect_edge = {CF_CLIENT, "r_watersurface_reflect_edge", "0.08", "screen-space reflection: a hit within this fraction of the viewport's edge fades out, so what the screen cannot see does not end in a hard line"};
 // WATERSURFACE asks for the OFFSCREEN path with a depth TEXTURE, on both
 // backends -- the murk's own shape (r_volumetric in R_BlendView_IsTrivial, the
 // depth-as-texture choice in R_Bloom_StartFrame, the scene-depth publish in
@@ -366,7 +385,7 @@ static qbool R_PartRefract_Wanted(void)
 cvar_t r_teleportswirl = {CF_CLIENT | CF_ARCHIVE, "r_teleportswirl", "1", "animate teleporter starfields with a slow rotation about the tile centre plus a churn -- the pad reads as a live vortex instead of wallpaper. 0 = the old look exactly (toggling with r_waterswirl also 0 rebuilds the shaders -- a one-off hitch)"};
 cvar_t r_teleportswirl_pivot = {CF_CLIENT | CF_ARCHIVE, "r_teleportswirl_pivot", "2", "what the teleporter starfield rotates ABOUT. 2 = NOTHING -- the rotation is off and the noise churn is the whole animation, which is the only arrangement that is both uniform on every pad and free of seams. 1 = the nearest texture tile centre, which is uniform on every pad wherever it sits in the map and is a real rotation at the surface. 0 = the pre-2026-09-01 behaviour, a fixed texcoord (0.5,0.5) -- and because Q1 texcoords are absolute world coordinates over the texture size, that pivot is near the MAP ORIGIN, so a pad N tiles out rotates on an N-tile lever arm. Measured on start.bsp: its 24 teleport faces ran 94 to 999 px/s, a 10.6x spread inside one map -- and a tile pivot fixes that but seams at every tile boundary, because a rotation cannot be both uniform across surfaces and continuous within one. Hence the shipped 2. r_teleportswirl_pivot 0 with r_teleportswirl_churn 1 restores the old frame exactly"};
 cvar_t r_teleportswirl_churn = {CF_CLIENT | CF_ARCHIVE, "r_teleportswirl_churn", "8", "how fast the teleporter starfield's noise warp EVOLVES, as a multiple of the historic rate. The warp is evaluated on the already-rotated coordinate, so at 1 it is a fixed deformation carried around by the rotation rather than something you watch change. Higher makes the starfield visibly boil. Ships at 8: measured on the start.bsp curtain the motion goes 2.73 / 7.16 / 9.14 / 10.63 at rates 1 / 4 / 8 / 16 and saturates past 16, so 8 is the knee. 1 = the historic rate exactly"};
-cvar_t r_gamma_analytic = {CF_CLIENT | CF_ARCHIVE, "r_gamma_analytic", "0", "evaluate the gamma curve in the shader instead of looking it up in a 256-entry 8-bit table. Numerically the same curve -- and slightly more accurate, since the table quantises both its input and its output -- but it has no 1.0 ceiling, which is what extended-range (EDR) output needs. Ignored while v_psycho is on or vid_sRGB is in effect, because the table is then not this curve. Toggling rebuilds the shaders, a one-off hitch"};
+cvar_t r_gamma_analytic = {CF_CLIENT | CF_ARCHIVE, "r_gamma_analytic", "0", "evaluate the gamma curve in the shader instead of looking it up in a 256-entry 8-bit table. Numerically the same curve -- and slightly more accurate, since the table quantises both its input and its output -- but it has no 1.0 ceiling, which is what extended-range (EDR) output needs. (With r_hdr_displayfit 1, r_hdr_shoulder on and a curve that darkens white, the analytic arm also lets the highlights climb to display white where the table cannot, so toggling this then moves the highlights.) Ignored while v_psycho is on or vid_sRGB is in effect, because the table is then not this curve. Toggling rebuilds the shaders, a one-off hitch"};
 cvar_t r_edr = {CF_CLIENT | CF_ARCHIVE, "r_edr", "0", "extended dynamic range (HDR) output on a Metal HDR display (METAL.md Phase 7; also on the Video Options menu): highlights that today clip at white are handed to the compositor above it instead, so the scene can genuinely outshine the HUD. 0 off (the shipped default), 1 on where the display reports EDR potential, 2 ask anyway on a display that reports none -- a diagnostic, not a setting. Needs the Metal renderpath; the other two prerequisites are FORCED while it is on (a 16-bit float scene buffer as if r_viewfbo 2, and the analytic gamma curve as if r_gamma_analytic 1 -- the 256-entry LUT has no headroom by construction), so this one cvar is the whole switch. Turning it on or off rebuilds the shaders unless r_gamma_analytic is already 1, a one-off hitch. r_edr_report explains any refusal"};
 
 // The ONE predicate for "EDR forces its prerequisites" (Phase 8 -- 'HDR always
@@ -425,6 +444,22 @@ cvar_t r_texture_dds_save = {CF_CLIENT | CF_ARCHIVE, "r_texture_dds_save", "0", 
 
 cvar_t r_usedepthtextures = {CF_CLIENT | CF_ARCHIVE, "r_usedepthtextures", "1", "use depth texture instead of depth renderbuffer where possible, uses less video memory but may render slower (or faster) depending on hardware"};
 cvar_t r_hdr_shoulder = {CF_CLIENT | CF_ARCHIVE, "r_hdr_shoulder", "0", "roll highlights off instead of clipping them, when the scene is rendered into a float buffer (needs r_viewfbo 2). This is the KNEE: below it nothing changes at all, above it the picture rolls smoothly towards white instead of flat-clipping, and the roll is applied on the brightest channel so hot highlights keep their hue. 0 disables. 0.75 is a good starting point. Does nothing at r_viewfbo 0 or 1, where the scene is already clamped before it gets here"};
+// REVIEW 0.3 (2026-09-24): default 0 -- judged the same evening on his EDR display and
+// the old roll-off preferred ("hdrfit_off looks better"): under his config it lowers the
+// highlights between the knee and scene ~6.5 (see SETTINGS.md). Kept as the A/B
+// (exec hdrfit_on.cfg); the SDR half has not been judged on an SDR display.
+cvar_t r_hdr_displayfit = {CF_CLIENT | CF_ARCHIVE, "r_hdr_displayfit", "0", "fit the picture's brightest values to what the display can actually show AFTER the gamma curve. Two halves: the analytic gamma's output ceiling takes the EDR grant in the picture's own sRGB encoding (macOS reports the grant in linear light, so 1.756 becomes 1.279 -- the old ceiling let the top band be emitted and then clipped flat), and r_hdr_shoulder's roll-off aims at the scene value the gamma curve maps onto that ceiling (full white without HDR, where a darkening curve otherwise stops every highlight short of white). Nothing changes below the r_hdr_shoulder knee, and nothing on the 256-entry table path (r_gamma_analytic 0). 0 = the old roll-off (aimed at scene value 1.0 or the raw linear headroom) and the old linear output ceiling, exactly"};
+// REVIEW 0.5 (2026-09-24): default 1 since the same evening, on Seb's eye at r_edr 0 on
+// e1m3 ("looks fine") -- a look change on every SDR frame, and under EDR only the 8-bit
+// readbacks. Cost measured nil on a frozen e1m3 spawn at r_edr 0 (the renderer's command
+// buffer 7.23 ms off / 7.19 on, toggled in one boot). Parity, cmdtrace and the metric
+// beds pin it 0; r_dither 0 is the undithered frame.
+cvar_t r_dither = {CF_CLIENT | CF_ARCHIVE, "r_dither", "1", "dither the finished frame where it is squeezed into 8 bits a channel -- a fixed grain of up to one level either way, exact black and white untouched -- so the darkest gradients fall away smoothly instead of banding; 0.5-2 scales it and 0 is the undithered frame exactly. Metal renderer only: the frame is held float to the end and dithered once at the present, and 8-bit screenshots, dumps and captures take the same dither; on an HDR display only those captures change. It can only dither detail the frame still holds: the analytic gamma curve (r_gamma_analytic 1, which r_edr forces) keeps it at the dark end, where the 256-entry table flattens it, and a float scene buffer (r_viewfbo 2) keeps it through the scene. Stock turns it off"};
+// SHADER PRE-WARM (2026-09-24, the REVIEW 0.8 instrument's first finding): a permutation
+// compiled for the first time mid-play stalls that frame -- the postprocess view-tint
+// shader cost 401 ms on demo1's first damage flash on a cold Metal shader cache. The lists
+// name what real play needs; R_ShaderWarm_Run compiles them at the first 3D frame instead.
+cvar_t r_shaderwarm = {CF_CLIENT | CF_ARCHIVE, "r_shaderwarm", "1", "compile the shader permutations listed in shaderwarm.txt (shipped, made from real play) and shaderwarm_learned.txt (this install's own, written beside config.cfg at quit with every permutation the session compiled) at the renderer's first 3D frame and again after any shader restart, so a first-use compile never lands mid-play -- on a fresh shader cache that is a longer first load instead of a stall on the first damage flash, the first water, the first bloom. 0 = compile each on first use, as before"};
 cvar_t r_viewfbo = {CF_CLIENT | CF_ARCHIVE, "r_viewfbo", "0", "enables use of an 8bit (1) or 16bit (2) or 32bit (3) per component float framebuffer render, which may be at a different resolution than the video mode; the default setting of 0 uses a framebuffer render when required, and renders directly to the screen otherwise"};
 cvar_t r_rendertarget_debug = {CF_CLIENT, "r_rendertarget_debug", "-1", "replaces the view with the contents of the specified render target (by number - note that these can fluctuate depending on scene)"};
 cvar_t r_viewscale = {CF_CLIENT | CF_ARCHIVE, "r_viewscale", "1", "scaling factor for resolution of the fbo rendering method, must be > 0, can be above 1 for a costly antialiasing behavior, typical values are 0.5 for 1/4th as many pixels rendered, or 1 for normal rendering"};
@@ -1229,6 +1264,8 @@ typedef struct r_glsl_permutation_s
 	int loc_WaterScreenTime;
 	int loc_WaterScreenLook;
 	int loc_WaterScreenTint;
+	int loc_WaterScreenReflect;   // VKRT 1b
+	int loc_WaterScreenReflect2;
 	int loc_LavaParams;
 	int loc_WaterParams;
 	int loc_BoltFizz;
@@ -2010,6 +2047,8 @@ static void R_GLSL_CompilePermutation(r_glsl_permutation_t *p, unsigned int mode
 		p->loc_WaterScreenTime            = R_Shader_GetUniformLocation(p, "WaterScreenTime");
 		p->loc_WaterScreenLook            = R_Shader_GetUniformLocation(p, "WaterScreenLook");
 		p->loc_WaterScreenTint            = R_Shader_GetUniformLocation(p, "WaterScreenTint");
+		p->loc_WaterScreenReflect         = R_Shader_GetUniformLocation(p, "WaterScreenReflect");   // VKRT 1b
+		p->loc_WaterScreenReflect2        = R_Shader_GetUniformLocation(p, "WaterScreenReflect2");
 		p->loc_LavaParams                 = R_Shader_GetUniformLocation(p, "LavaParams");
 		p->loc_WaterParams                = R_Shader_GetUniformLocation(p, "WaterParams");
 		p->loc_BoltFizz                   = R_Shader_GetUniformLocation(p, "BoltFizz");
@@ -2176,6 +2215,153 @@ static void R_GLSL_CompilePermutation(r_glsl_permutation_t *p, unsigned int mode
 		Mem_Free(sourcestring);
 }
 
+// SHADER PRE-WARM (r_shaderwarm, 2026-09-24). Two lists of (mode, permutation) pairs name
+// the permutations real play needs: m5/shaderwarm.txt (shipped; test/shaderwarm-gen.sh
+// regenerates it from demos) and shaderwarm_learned.txt (this install's own, written beside
+// config.cfg at quit -- the shared-config shape -- with every permutation the session
+// compiled). R_ShaderWarm_Run compiles their union at the first R_RenderView after the
+// renderer starts or restarts, and it must run AFTER R_CompileShader_CheckStaticParms has
+// settled the static parms: a compile before that carries the wrong #defines and is thrown
+// away by the restart that follows. So on a cold shader cache the cost is a longer first
+// load (or one consolidated stall on the frame of a static-parm change) instead of a stall
+// at the first damage flash, the first water, the first bloom; on a warm cache it is a few
+// milliseconds. The static parms are never listed: they are whatever is live, which is what
+// the game draws with. METAL_HITCH reports the whole warm as one "warm" line.
+extern cvar_t m5_sharedconfig;   // host.c: the one-config-for-every-game rule the learned list follows
+#define R_SHADERWARM_MAX 1024
+typedef struct r_shaderwarm_pair_s { unsigned int mode; uint64_t permutation; } r_shaderwarm_pair_t;
+static r_shaderwarm_pair_t r_shaderwarm_seen[R_SHADERWARM_MAX];   // compiled this process, or read from a list
+static int r_shaderwarm_numseen;
+static qbool r_shaderwarm_pending;   // set at gl_main_start and every shader restart; consumed by R_ShaderWarm_Run
+
+static void R_ShaderWarm_Note(unsigned int mode, uint64_t permutation)
+{
+	int i;
+	for (i = 0; i < r_shaderwarm_numseen; i++)
+		if (r_shaderwarm_seen[i].mode == mode && r_shaderwarm_seen[i].permutation == permutation)
+			return;
+	if (r_shaderwarm_numseen >= R_SHADERWARM_MAX)
+		return;
+	r_shaderwarm_seen[r_shaderwarm_numseen].mode = mode;
+	r_shaderwarm_seen[r_shaderwarm_numseen].permutation = permutation;
+	r_shaderwarm_numseen++;
+}
+
+// one "<mode> <permutation hex>" per line; // comments, # comments and blank lines ignored
+static int R_ShaderWarm_ReadList(const char *path)
+{
+	fs_offset_t size = 0;
+	unsigned char *data = FS_LoadFile(path, tempmempool, true, &size);
+	const char *s, *end;
+	int n = 0;
+	if (!data)
+		return 0;
+	s = (const char *)data;
+	end = s + size;
+	while (s < end)
+	{
+		const char *eol = (const char *)memchr(s, '\n', (size_t)(end - s));
+		size_t len = eol ? (size_t)(eol - s) : (size_t)(end - s);
+		unsigned int mode = 0;
+		unsigned long long perm = 0;
+		char line[128];
+		if (len >= sizeof(line))
+			len = sizeof(line) - 1;
+		memcpy(line, s, len);
+		line[len] = 0;
+		if (line[0] != '/' && line[0] != '#' && sscanf(line, "%u %llx", &mode, &perm) == 2 && mode < SHADERMODE_COUNT)
+		{
+			R_ShaderWarm_Note(mode, (uint64_t)perm);
+			n++;
+		}
+		s = eol ? eol + 1 : end;
+	}
+	Mem_Free(data);
+	return n;
+}
+
+static void R_ShaderWarm_Run(void)
+{
+	int i, compiled = 0, already = 0, failed = 0, listed;
+	double t0, hitch;
+	if (!r_shaderwarm_pending)
+		return;
+	r_shaderwarm_pending = false;
+	if (!r_shaderwarm.integer)
+		return;
+	listed = R_ShaderWarm_ReadList("shaderwarm.txt") + R_ShaderWarm_ReadList("shaderwarm_learned.txt");
+	hitch = Sys_HitchStart();
+	t0 = Sys_DirtyTime();
+	for (i = 0; i < r_shaderwarm_numseen; i++)
+	{
+		r_glsl_permutation_t *perm = R_GLSL_FindPermutation(r_shaderwarm_seen[i].mode, r_shaderwarm_seen[i].permutation);
+		if (perm->compiled)
+		{
+			already++;
+			continue;
+		}
+		R_GLSL_CompilePermutation(perm, r_shaderwarm_seen[i].mode, r_shaderwarm_seen[i].permutation);
+		if (perm->program)
+			compiled++;
+		else
+			failed++;
+	}
+	// the compiles bound programs as they went; the next draw must re-bind its own
+	r_glsl_permutation = NULL;
+	R_Shader_UseProgram(0);
+	Sys_HitchReport(hitch, "warm", "%d shader permutations (%d listed, %d already compiled, %d failed)", compiled, listed, already, failed);
+	if (compiled || failed)
+		Con_Printf("shaders: pre-warmed %d permutation%s in %.0f ms (%d listed, %d already compiled, %d failed)\n",
+		           compiled, compiled == 1 ? "" : "s", (Sys_DirtyTime() - t0) * 1000.0, listed, already, failed);
+}
+
+static void R_ShaderWarm_WriteTo(qfile_t *f, FILE *sf, const char *what)
+{
+	int i;
+	char line[192];
+	dpsnprintf(line, sizeof(line), "// %s -- shader permutations to compile at the renderer's first frame (r_shaderwarm).\n// One per line: <mode> <permutation hex>; the rest of a line is a comment.\n", what);
+	if (f) FS_Print(f, line); else fputs(line, sf);
+	for (i = 0; i < r_shaderwarm_numseen; i++)
+	{
+		const char *name = r_shaderwarm_seen[i].mode < SHADERMODE_COUNT ? shadermodeinfo[SHADERLANGUAGE_GLSL][r_shaderwarm_seen[i].mode].name : NULL;
+		dpsnprintf(line, sizeof(line), "%u %llx  // %s\n", r_shaderwarm_seen[i].mode, (unsigned long long)r_shaderwarm_seen[i].permutation, name ? name : "?");
+		if (f) FS_Print(f, line); else fputs(line, sf);
+	}
+}
+
+// Host_SaveConfig: the learned list, beside config.cfg (into m5 under m5_sharedconfig, the
+// config's own rule), so the next launch pre-warms what this one had to compile mid-play
+void R_ShaderWarm_Save(void)
+{
+	qfile_t *f;
+	if (!r_shaderwarm_numseen || cls.state == ca_dedicated)
+		return;
+	if (m5_sharedconfig.integer && M5_GameDirMounted("m5"))
+		f = FS_OpenRealFileInGameDir("m5", "shaderwarm_learned.txt", "wb", true);
+	else
+		f = FS_OpenRealFile("shaderwarm_learned.txt", "wb", true);
+	if (!f)
+		return;
+	R_ShaderWarm_WriteTo(f, NULL, "shaderwarm_learned.txt");
+	FS_Close(f);
+}
+
+// M5_SHADERWARM_OUT=<path>: the seed generator's read (test/shaderwarm-gen.sh) -- the
+// process's whole set, written at renderer shutdown whatever the launch arguments
+// (Host_SaveConfig skips a -benchmark run, and the generator's boots are timedemos)
+static void R_ShaderWarm_DumpEnv(void)
+{
+	const char *out = getenv("M5_SHADERWARM_OUT");
+	FILE *sf;
+	if (!out || !out[0] || !r_shaderwarm_numseen)
+		return;
+	sf = fopen(out, "w");
+	if (!sf)
+		return;
+	R_ShaderWarm_WriteTo(NULL, sf, "shaderwarm.txt");
+	fclose(sf);
+}
+
 static void R_SetupShader_SetPermutationGLSL(unsigned int mode, uint64_t permutation)
 {
 	r_glsl_permutation_t *perm = R_GLSL_FindPermutation(mode, permutation);
@@ -2188,6 +2374,8 @@ static void R_SetupShader_SetPermutationGLSL(unsigned int mode, uint64_t permuta
 			{
 				Con_DPrintf("Compiling shader mode %u permutation %" PRIx64 "\n", mode, permutation);
 				R_GLSL_CompilePermutation(perm, mode, permutation);
+				if (r_glsl_permutation->program)
+					R_ShaderWarm_Note(mode, permutation);   // a first-use compile: remembered for the learned list
 			}
 			if (!r_glsl_permutation->program)
 			{
@@ -2204,7 +2392,10 @@ static void R_SetupShader_SetPermutationGLSL(unsigned int mode, uint64_t permuta
 					if (!r_glsl_permutation->compiled)
 						R_GLSL_CompilePermutation(perm, mode, permutation);
 					if (r_glsl_permutation->program)
+					{
+						R_ShaderWarm_Note(mode, permutation);   // the reduced permutation that worked
 						break;
+					}
 				}
 				if (i >= SHADERPERMUTATION_COUNT)
 				{
@@ -2268,6 +2459,7 @@ void R_GLSL_Restart_f(cmd_state_t *cmd)
 		}
 		break;
 	}
+	r_shaderwarm_pending = true;   // the next R_RenderView pre-warms the lists again under the new static parms
 }
 
 static void R_GLSL_DumpShader_f(cmd_state_t *cmd)
@@ -3164,7 +3356,12 @@ void R_SetupShader_Surface(const float rtlightambient[3], const float rtlightdif
 				qbool wslive = !ui && r_watersurface.integer && r_fb.waterscreen_valid && r_fb.waterscreen
 				 && !r_fb.water.renderingscene && !(t->currentmaterialflags & MATERIALFLAG_ADD)
 				 && (t->currentmaterialflags & (MATERIALFLAG_WATERALPHA | MATERIALFLAG_BLENDED)) == (MATERIALFLAG_WATERALPHA | MATERIALFLAG_BLENDED);
-				qbool wsguard = wslive && r_watersurface_guard.integer && r_fb.scenedepthvalid && r_fb.scenedepthtexture && !r_transparentdepthmasking.integer;
+				// VKRT 1b: the screen-space reflection marches the same depth the guard reads,
+				// so it shares the guard's conditions (a depth texture this frame, and no
+				// transparent depth writes -- the read-only-attachment rule) but not its cvar.
+				qbool wsdepth = wslive && r_fb.scenedepthvalid && r_fb.scenedepthtexture && !r_transparentdepthmasking.integer;
+				qbool wsguard = wsdepth && r_watersurface_guard.integer;
+				qbool wsreflect = wsdepth && r_watersurface_reflect.value > 0.0f;
 				float wsinvw = r_fb.screentexturewidth > 0 ? 1.0f / (float)r_fb.screentexturewidth : 0.0f;
 				float wsinvh = r_fb.screentextureheight > 0 ? 1.0f / (float)r_fb.screentextureheight : 0.0f;
 				{
@@ -3182,21 +3379,43 @@ void R_SetupShader_Surface(const float rtlightambient[3], const float rtlightdif
 				if (r_glsl_permutation->loc_WaterScreenSize >= 0)
 					R_Shader_Uniform4f(r_glsl_permutation->loc_WaterScreenSize, wsinvw, wsinvh, (float)r_refdef.view.viewport.width * wsinvw, (float)r_refdef.view.viewport.height * wsinvh);
 				if (r_glsl_permutation->loc_WaterScreenTime >= 0)
-					R_Shader_Uniform4f(r_glsl_permutation->loc_WaterScreenTime, (float)r_refdef.scene.time * r_watersurface_speed.value, wsguard ? 1.0f : 0.0f, r_refdef.view.viewport.screentodepth[0], r_refdef.view.viewport.screentodepth[1]);
+					R_Shader_Uniform4f(r_glsl_permutation->loc_WaterScreenTime, (float)r_refdef.scene.time * r_watersurface_speed.value, (wsguard || wsreflect) ? 1.0f : 0.0f, r_refdef.view.viewport.screentodepth[0], r_refdef.view.viewport.screentodepth[1]);
 				if (r_glsl_permutation->loc_WaterScreenLook >= 0)
 					R_Shader_Uniform4f(r_glsl_permutation->loc_WaterScreenLook, bound(0.0f, r_watersurface_opacity.value, 1.0f), max(0.1f, r_watersurface_fresnel.value), wslive ? 0.125f * max(0.0f, r_watersurface_warp.value) : 0.0f, max(0.0f, r_watersurface_bump.value));
 				if (r_glsl_permutation->loc_WaterScreenTint >= 0)
 					R_Shader_Uniform4f(r_glsl_permutation->loc_WaterScreenTint, max(0.0f, r_watersurface_tint_red.value), max(0.0f, r_watersurface_tint_green.value), max(0.0f, r_watersurface_tint_blue.value), max(0.0f, r_watersurface_taper.value));
+				if (r_glsl_permutation->loc_WaterScreenReflect >= 0)
+					R_Shader_Uniform4f(r_glsl_permutation->loc_WaterScreenReflect, wsreflect ? r_watersurface_reflect.value : 0.0f, bound(4.0f, r_watersurface_reflect_steps.value, 64.0f), max(0.0f, r_watersurface_reflect_thickness.value), max(16.0f, r_watersurface_reflect_dist.value));
+				if (r_glsl_permutation->loc_WaterScreenReflect2 >= 0)
+					R_Shader_Uniform4f(r_glsl_permutation->loc_WaterScreenReflect2, bound(0.0f, r_watersurface_reflect_ripple.value, 1.0f), bound(0.0f, r_watersurface_reflect_edge.value, 0.5f), 0.0f, 0.0f);
 				if (r_glsl_permutation->tex_Texture_WaterScreen >= 0)
 					R_Mesh_TexBind(r_glsl_permutation->tex_Texture_WaterScreen, wslive ? r_fb.waterscreen : r_texture_white);
 				if (r_glsl_permutation->tex_Texture_ScreenDepth >= 0)
-					R_Mesh_TexBind(r_glsl_permutation->tex_Texture_ScreenDepth, wsguard ? r_fb.scenedepthtexture : r_texture_white);
+					R_Mesh_TexBind(r_glsl_permutation->tex_Texture_ScreenDepth, (wsguard || wsreflect) ? r_fb.scenedepthtexture : r_texture_white);
 				if (wslive)
 				{
 					// first-event: the arm lives inside a static parm, which appears in no
 					// permutation number and no shader name, so this is its only console evidence
 					static int wsreported;
 					if (!wsreported) { wsreported = 1; Con_Printf("water surface armed (screen-space refraction, distort %.3f, guard %s)\n", r_watersurface_distort.value, wsguard ? "on" : "off"); }
+					// VKRT 1b: the reflection's state, change-only (a liquid batch is drawn
+					// every frame the water is in view, so this must never print per frame).
+					// Off says so by name: a gain asked for with no depth texture this frame
+					// (r_transparentdepthmasking, or a path with no scene depth) is the old
+					// text and nothing on screen would say why.
+					static int wsrstate = -1;
+					static float wsrgain = -1.0f;
+					int wsrnow = wsreflect ? 1 : (r_watersurface_reflect.value > 0.0f ? 2 : 0);
+					if (wsrnow != wsrstate || (wsrnow == 1 && wsrgain != r_watersurface_reflect.value))
+					{
+						wsrstate = wsrnow; wsrgain = r_watersurface_reflect.value;
+						if (wsrnow == 1)
+							Con_Printf("water surface reflection: screen-space (gain %.2f, %d steps, %.0f units)\n", r_watersurface_reflect.value, (int)bound(4.0f, r_watersurface_reflect_steps.value, 64.0f), max(16.0f, r_watersurface_reflect_dist.value));
+						else if (wsrnow == 2)
+							Con_Printf("water surface reflection: asked for (r_watersurface_reflect %.2f) but no scene depth this frame -- off\n", r_watersurface_reflect.value);
+						else
+							Con_Printf("water surface reflection: off (r_watersurface_reflect 0)\n");
+					}
 				}
 			}
 #ifdef USE_RT_METAL
@@ -3308,7 +3527,12 @@ void R_SetupShader_Surface(const float rtlightambient[3], const float rtlightdif
 					float liqlive = 0.0f;
 					if (rtliquidamount > 0.0f && rt_metal_liquids_rt.integer && RT_Metal_GetLiquidTexture(&liqtex, &liqw, &liqh))
 						liqlive = 1.0f;
-					R_Shader_Uniform4f(r_glsl_permutation->loc_RTLiquidRT, liqlive, liqlive > 0.0f ? (float)(liqw / 2) : 0.0f, 0.0f, 0.0f);
+					// VKRT slice 1 (rt_metal_liquids_ripple): .z is the ripple, .w the pair's
+					// height in texels (the shader clamps its displaced read inside the
+					// reflection half). Both 0 unless the pair is live, so the shader's
+					// rippled branch cannot be taken at the old bytes.
+					float rtripple = liqlive > 0.0f ? max(0.0f, rt_metal_liquids_ripple.value) : 0.0f;
+					R_Shader_Uniform4f(r_glsl_permutation->loc_RTLiquidRT, liqlive, liqlive > 0.0f ? (float)(liqw / 2) : 0.0f, rtripple, liqlive > 0.0f ? (float)liqh : 0.0f);
 					if (r_glsl_permutation->tex_Texture_RTLiquid >= 0 && r_glsl_permutation->tex_Texture_RTLiquid < 32)
 					{
 						if (vid.renderpath == RENDERPATH_METAL)
@@ -3324,6 +3548,25 @@ void R_SetupShader_Surface(const float rtlightambient[3], const float rtlightdif
 					{
 						static int rtpairreported;
 						if (!rtpairreported) { rtpairreported = 1; Con_Printf("RT liquid pair armed (per-pixel own term + reflection)\n"); }
+						// VKRT slice 1: the ripple's own liveness, change-only and only on the
+						// pair's live frames. The ripple is the WATER SURFACE's (the shader reads
+						// wsdisp under USEWATERSCREEN), so a ripple asked for with r_watersurface
+						// 0 is the flat read and nothing on screen would say why -- the report does.
+						{
+							static float rtrippleshown = -1.0f;
+							static int rtripplews = -1;
+							int ws = r_watersurface.integer ? 1 : 0;
+							if (rtripple != rtrippleshown || ws != rtripplews)
+							{
+								rtrippleshown = rtripple; rtripplews = ws;
+								if (rtripple > 0.0f && ws)
+									Con_Printf("RT liquid reflection: rippled by the water surface (x%.2f of its displacement)\n", rtripple);
+								else if (rtripple > 0.0f)
+									Con_Printf("RT liquid reflection: ripple asked for (rt_metal_liquids_ripple %.2f) but r_watersurface is 0 -- the surface is what ripples it; flat\n", rtripple);
+								else
+									Con_Printf("RT liquid reflection: flat (rt_metal_liquids_ripple 0)\n");
+							}
+						}
 					}
 				}
 				// A DECLARED UNIT THAT NOBODY BINDS INHERITS THE LAST SHADER'S
@@ -3836,6 +4079,43 @@ skinframe_t *R_SkinFrame_Find(const char *name, int textureflags, int comparewid
 		skinframe->avgcolor[3] = avgcolor[4] / (255.0 * cnt); \
 	}
 
+// M5 (m5_lumacalibrate): the world-texture loader in model_brush.c has the
+// 1996 miptex bytes in hand and this loader has the replacement glow pixels,
+// so the miptex's fullbright PEAK crosses as a hint set before the load and
+// cleared after it (0 = no hint: model skins, sprites, the HUD are never
+// touched). The scale the last load applied is readable back for the
+// per-map count; a cached skinframe never reaches the glow block, so the
+// setter zeroes it first and a cache hit reads as "nothing rescaled".
+static float r_skinframe_lumapeak_hint;
+static float r_skinframe_lumascale_last;
+void R_SkinFrame_SetLumaHint(float miptexpeak)
+{
+	r_skinframe_lumapeak_hint = miptexpeak;
+	r_skinframe_lumascale_last = 0;
+}
+float R_SkinFrame_LastLumaScale(void)
+{
+	return r_skinframe_lumascale_last;
+}
+// the 1996 miptex's fullbright peak: the brightest channel over the texels
+// that map to a fullbright palette entry (palette_bgra_onlyfullbrights is
+// black everywhere else), 0 when the texture has none
+float R_SkinFrame_MiptexFullbrightPeak(const unsigned char *skindata, int width, int height)
+{
+	int i, n = width * height;
+	unsigned int peak = 0;
+	if (!skindata || n <= 0)
+		return 0;
+	for (i = 0; i < n; i++)
+	{
+		unsigned int c = palette_bgra_onlyfullbrights[skindata[i]];
+		unsigned int m = c & 255;
+		if (((c >> 8) & 255) > m) m = (c >> 8) & 255;
+		if (((c >> 16) & 255) > m) m = (c >> 16) & 255;
+		if (m > peak) peak = m;
+	}
+	return (float)peak;
+}
 skinframe_t *R_SkinFrame_LoadExternal(const char *name, int textureflags, qbool complain, qbool fallbacknotexture)
 {
 	skinframe_t *skinframe;
@@ -4006,6 +4286,43 @@ skinframe_t *R_SkinFrame_LoadExternal_SkinFrame(skinframe_t *skinframe, const ch
 	mymiplevel = savemiplevel;
 	if (skinframe->glow == NULL && ((pixels = loadimagepixelsbgra(va(vabuf, sizeof(vabuf), "%s_glow", skinframe->basename), false, false, false, &mymiplevel)) || (pixels = loadimagepixelsbgra(va(vabuf, sizeof(vabuf), "%s.blend", skinframe->basename), false, false, false, &mymiplevel)) || (pixels = loadimagepixelsbgra(va(vabuf, sizeof(vabuf), "%s_blend", skinframe->basename), false, false, false, &mymiplevel)) || (pixels = loadimagepixelsbgra(va(vabuf, sizeof(vabuf), "%s_luma", skinframe->basename), false, false, false, &mymiplevel))))
 	{
+		// M5 (m5_lumacalibrate): lift the pack's glow layer to the 1996 peak.
+		// Peak of the layer = its brightest channel over every pixel; the
+		// scale is miptex peak over that, capped, never below 1, applied to
+		// the colour channels only (alpha is the layer's own coverage). The
+		// 8-bit arithmetic is exact enough: both peaks are measured in the
+		// same encoding and the cap keeps the clip to a handful of texels.
+		if (m5_lumacalibrate.integer && r_skinframe_lumapeak_hint > 0)
+		{
+			int k, n = image_width * image_height;
+			unsigned int lpeak = 0;
+			for (k = 0; k < n; k++)
+			{
+				unsigned int m = pixels[k*4+0];
+				if (pixels[k*4+1] > m) m = pixels[k*4+1];
+				if (pixels[k*4+2] > m) m = pixels[k*4+2];
+				if (m > lpeak) lpeak = m;
+			}
+			if (lpeak > 0 && r_skinframe_lumapeak_hint > lpeak)
+			{
+				float scale = min(r_skinframe_lumapeak_hint / (float)lpeak, max(1.0f, m5_lumacalibrate_max.value));
+				if (scale > 1.0f)
+				{
+					for (k = 0; k < n; k++)
+					{
+						int c;
+						for (c = 0; c < 3; c++)
+						{
+							float v = pixels[k*4+c] * scale;
+							pixels[k*4+c] = (unsigned char)(v > 255.0f ? 255 : v);
+						}
+					}
+					r_skinframe_lumascale_last = scale;
+					if (developer.integer >= 2)
+						Con_Printf("M5 luma: %s glow layer peak %u -> 1996 peak %.0f, x%.2f\n", skinframe->basename, lpeak, r_skinframe_lumapeak_hint, scale);
+				}
+			}
+		}
 		skinframe->glow = R_LoadTexture2D (r_main_texturepool, va(vabuf, sizeof(vabuf), "%s_glow", skinframe->basename), image_width, image_height, pixels, vid.sRGB3D ? TEXTYPE_SRGB_BGRA : TEXTYPE_BGRA, textureflags & (gl_texturecompression_glow.integer && gl_texturecompression.integer ? ~0 : ~TEXF_COMPRESS), mymiplevel, NULL);
 #ifndef USE_GLES2
 		if (r_savedds && skinframe->glow)
@@ -4565,6 +4882,7 @@ static void R_Main_ResizeViewCache(void)
 extern rtexture_t *loadingscreentexture;
 static void gl_main_start(void)
 {
+	r_shaderwarm_pending = true;   // r_shaderwarm: the first R_RenderView compiles the warm lists
 	loadingscreentexture = NULL;
 	r_texture_blanknormalmap = NULL;
 	r_texture_white = NULL;
@@ -4678,6 +4996,7 @@ static void R_ReactiveStamp_Forget(void);   // the reactive stamp's stash, defin
 
 static void gl_main_shutdown(void)
 {
+	R_ShaderWarm_DumpEnv();   // M5_SHADERWARM_OUT, the seed generator's read
 	R_RenderTarget_FreeUnused(true);
 	Mem_ExpandableArray_FreeArray(&r_fb.rendertargets);
 	R_AnimCache_Free();
@@ -4892,6 +5211,8 @@ void GL_Main_Init(void)
 	Cvar_RegisterVariable(&r_drawexteriormodel);
 	Cvar_RegisterVariable(&r_speeds);
 	Cvar_RegisterVariable(&r_fullbrights);
+	Cvar_RegisterVariable(&m5_lumacalibrate);
+	Cvar_RegisterVariable(&m5_lumacalibrate_max);
 	Cvar_RegisterVariable(&r_wateralpha);
 	Cvar_RegisterVariable(&r_wateralpha_force);
 	Cvar_RegisterVariable(&r_dynamic);
@@ -5004,7 +5325,7 @@ void GL_Main_Init(void)
 	Cvar_RegisterVariable(&r_redglow_minlevel);
 	Cvar_RegisterVariable(&r_gamma_analytic);
 	Cvar_RegisterVariable(&r_edr);
-	Cmd_AddCommand(CF_CLIENT, "r_gamma_analytic_test", R_GammaAnalyticTest_f, "compare the analytic gamma curve against the shipped 256-entry LUT at 256 points (METAL.md Phase 7-1)");
+	Cmd_AddCommand(CF_CLIENT, "r_gamma_analytic_test", R_GammaAnalyticTest_f, "compare the analytic gamma curve against the shipped 256-entry LUT at 256 points (METAL.md Phase 7-1), and round-trip the r_hdr_displayfit asymptote through the curve at SDR white and two HDR grants (REVIEW 0.3)");
 	Cvar_RegisterVariable(&r_lavaboil);
 	Cvar_RegisterVariable(&r_waterswirl);
 	Cvar_RegisterVariable(&r_watersurface);
@@ -5024,6 +5345,12 @@ void GL_Main_Init(void)
 	Cvar_RegisterVariable(&r_watersurface_tint_green);
 	Cvar_RegisterVariable(&r_watersurface_tint_blue);
 	Cvar_RegisterVariable(&r_watersurface_clear);
+	Cvar_RegisterVariable(&r_watersurface_reflect);
+	Cvar_RegisterVariable(&r_watersurface_reflect_steps);
+	Cvar_RegisterVariable(&r_watersurface_reflect_thickness);
+	Cvar_RegisterVariable(&r_watersurface_reflect_dist);
+	Cvar_RegisterVariable(&r_watersurface_reflect_ripple);
+	Cvar_RegisterVariable(&r_watersurface_reflect_edge);
 	Cvar_RegisterVariable(&r_teleportswirl);
 	Cvar_RegisterVariable(&r_teleportswirl_pivot);
 	Cvar_RegisterVariable(&r_teleportswirl_churn);
@@ -5046,6 +5373,9 @@ void GL_Main_Init(void)
 	Cvar_RegisterVariable(&r_texture_dds_save);
 	Cvar_RegisterVariable(&r_usedepthtextures);
 	Cvar_RegisterVariable(&r_hdr_shoulder);
+	Cvar_RegisterVariable(&r_hdr_displayfit);
+	Cvar_RegisterVariable(&r_dither);
+	Cvar_RegisterVariable(&r_shaderwarm);
 	Cvar_RegisterVariable(&r_viewfbo);
 	Cvar_RegisterVariable(&r_rendertarget_debug);
 	Cvar_RegisterVariable(&r_viewscale);
@@ -6182,6 +6512,41 @@ static void R_View_Update(const int *myscissor)
 
 float viewscalefpsadjusted = 1.0f;
 
+/*
+================
+R_TAA_JitterApplied / R_TAA_RayJitter (REVIEW 0.6, 2026-09-24)
+
+The ONE predicate for "this view's raster is TAA-jittered", shared by
+R_SetupView and the ray tracer so the two cannot disagree about a frame.
+
+The RAY-side offset, derived rather than guessed: R_SetupView adds
+jitter*2/size to the finished projection's column-2 slots (GL m[8]/m[9]), which
+the row-major transform multiplies by z_eye with w = -z_eye, so the image moves
+by -jitter in NDC. On Metal the y row was NEGATED by R_Viewport_InitPerspective
+before the add, and the Metal viewport keeps GL numerics (memory row = GL row),
+so in the kernel's GL rows the image moves (-jx, +jy) -- and pixel (c,r) sees
+the UNJITTERED ray through (c+0.5+jx, r+0.5-jy). The ray offset is therefore
+(+jx, -jy) on Metal, (+jx, +jy) on GL (no negation there; unreachable today,
+MetalFX being Metal's). r_metalfx_signs must NOT be applied here: it is what
+MetalFX is told, not how the raster moved.
+================
+*/
+static qbool R_TAA_JitterApplied(void)
+{
+	return r_fb.taawanted && r_refdef.view.ismain && !r_refdef.envmap && r_refdef.view.useperspective
+	    && !r_refdef.view.useclipplane && (r_fb.taa_jitter[0] != 0.0f || r_fb.taa_jitter[1] != 0.0f);
+}
+
+qbool R_TAA_RayJitter(float out[2])
+{
+	out[0] = out[1] = 0.0f;
+	if (!R_TAA_JitterApplied())
+		return false;
+	out[0] = r_fb.taa_jitter[0];
+	out[1] = (vid.renderpath == RENDERPATH_METAL) ? -r_fb.taa_jitter[1] : r_fb.taa_jitter[1];
+	return true;
+}
+
 void R_SetupView(qbool allowwaterclippingplane, int viewfbo, rtexture_t *viewdepthtexture, rtexture_t *viewcolortexture, int viewx, int viewy, int viewwidth, int viewheight)
 {
 	const float *customclipplane = NULL;
@@ -6233,8 +6598,7 @@ void R_SetupView(qbool allowwaterclippingplane, int viewfbo, rtexture_t *viewdep
 	// Frustum culling is unaffected either way -- R_View_SetFrustum builds its
 	// planes from r_refdef.view.matrix and the frustum scalars, never from the
 	// projection (its extract-from-MVP form is #if 0).
-	if (r_fb.taawanted && r_refdef.view.ismain && !r_refdef.envmap && r_refdef.view.useperspective
-	 && !r_refdef.view.useclipplane && (r_fb.taa_jitter[0] != 0.0f || r_fb.taa_jitter[1] != 0.0f))
+	if (R_TAA_JitterApplied())	// the value-identical predicate, shared with the ray tracer (REVIEW 0.6)
 	{
 		// jitter is in render PIXELS; an NDC span of 2 covers viewwidth of them
 		r_refdef.view.viewport.projectmatrix.m[0][2] += r_fb.taa_jitter[0] * 2.0f / (float)max(viewwidth, 1);
@@ -7422,6 +7786,9 @@ static qbool R_BlendView_IsTrivial(int viewwidth, int viewheight, int width, int
 	// Skip: if (r_glsl_saturation_redcompensate.integer) (already covered by saturation above).
 	// Skip: if (r_glsl_postprocess.integer) (already covered by r_glsl_postprocess above).
 	// Skip: if (r_glsl_postprocess_uservec1_enable.integer) (already covered by r_glsl_postprocessing above).
+	// Skip: r_dither (REVIEW 0.5). It dithers at the Metal PRESENT, after this
+	// path, and deliberately does not force the offscreen scene: a direct frame
+	// still reaches the float screen texture it holds to the present.
 	if (r_fxaa.integer && !m5_stock.integer)
 		return false;
 	if (r_colorfringe.value && !m5_stock.integer)
@@ -7519,11 +7886,15 @@ static r_rendertarget_t *R_MetalFX_GetPostprocessTarget(int fbo, int x, int y, i
 	if (vid.mode.samples)
 		return NULL;
 	textype = r_fb.rt_screen->colortextype[0];
-	// vid.edr_active is what formats mb_screentex this frame (the backend's
-	// BeginFrame read the same value earlier in this same frame), so it is
-	// the honest output-format selector; on the one frame of an EDR toggle
-	// edge it can disagree with rt_screen's textype, which the scaler cache
-	// handles as an ordinary mixed-format key
+	// The OUTPUT format is read off the texture BeginFrame made this frame
+	// (Metal_Backend_ScreenIsFloat: RGBA16F under EDR, or while r_dither holds
+	// the frame float -- REVIEW 0.5), so the scaler can never be keyed for a
+	// destination it will not be handed; a mismatch is refused at encode and
+	// falls back to NO upscale, silently and faster. vid.edr_active still
+	// chooses the spatial scaler's colour processing (HDR only into a float
+	// output). At r_dither 0 the two agree on every rendering frame. On the
+	// one frame of an EDR toggle edge the input can disagree with rt_screen's
+	// textype, which the scaler cache handles as an ordinary mixed-format key
 	if (r_metalfx.integer >= 2)
 	{
 		// Temporal needs a sampleable depth texture; the predicate forces one
@@ -7536,10 +7907,10 @@ static r_rendertarget_t *R_MetalFX_GetPostprocessTarget(int fbo, int x, int y, i
 		// motion blur runs on the same render-res frame just before this.
 		if (r_refdef.view.ismain && (r_motionblur.value > 0 || r_damageblur.value > 0))
 			return NULL;
-		if (!MetalFX_TemporalReady(inw, inh, width, height, textype, vid.edr_active))
+		if (!MetalFX_TemporalReady(inw, inh, width, height, textype, vid.edr_active, Metal_Backend_ScreenIsFloat()))
 			return NULL;
 	}
-	else if (!MetalFX_ScalerReady(inw, inh, width, height, textype, vid.edr_active))
+	else if (!MetalFX_ScalerReady(inw, inh, width, height, textype, vid.edr_active, Metal_Backend_ScreenIsFloat()))
 		return NULL;
 	// the R_Bloom_MakeTexture shape: colour only, no depth -- the postprocess
 	// draw needs none, and the pool keys on the whole tuple so this can never
@@ -7641,13 +8012,14 @@ static r_rendertarget_t *R_PostAA_Target(int width, int height)
 		return NULL;
 	// THE DESTINATION MUST CARRY THE SCALER'S OUTPUT FORMAT, WHICH IS THE SCREEN
 	// TEXTURE'S -- not the scene buffer's. metal_fx.m refuses a destination whose
-	// pixelFormat differs from mfx_scaler.outputTextureFormat, and the backend
-	// picks that from vid.edr_active (RGBA16Float under EDR, BGRA8 otherwise)
-	// while r_fb.rt_screen is the FLOAT scene buffer whenever r_viewfbo >= 2.
+	// pixelFormat differs from mfx_scaler.outputTextureFormat, which follows
+	// the screen texture's own format (Metal_Backend_ScreenIsFloat: EDR or
+	// r_dither -- RGBA16Float then, BGRA8 otherwise) while r_fb.rt_screen is
+	// the FLOAT scene buffer whenever r_viewfbo >= 2.
 	// Using the scene buffer's format here refused every encode with EDR off,
 	// which cost an hour and read as "the feature does nothing".
 	return R_RenderTarget_Get(width, height, TEXTYPE_UNUSED, false,
-	                          vid.edr_active ? TEXTYPE_COLORBUFFER16F : TEXTYPE_COLORBUFFER,
+	                          Metal_Backend_ScreenIsFloat() ? TEXTYPE_COLORBUFFER16F : TEXTYPE_COLORBUFFER,
 	                          TEXTYPE_UNUSED, TEXTYPE_UNUSED, TEXTYPE_UNUSED);
 }
 
@@ -8659,6 +9031,7 @@ static rtexture_t *R_Volumetric_BuildNoiseV2(int size, const char *mapname)
 	// %dx%dx%d, never %d^3: the console eats ^3 as a colour escape
 	Con_Printf("volumetric noise v2: %dx%dx%d, seeded '%s', %.0f KB, baked in %.0f ms\n",
 		size, size, size, mapname, total * 4 / 1024.0, (Sys_DirtyTime() - starttime) * 1000.0);
+	Sys_HitchReport(starttime, "bake", "noise2 %s", mapname);	// METAL_HITCH (a no-op unless set)
 	Mem_Free(raw);
 	Mem_Free(featA);
 	Mem_Free(featB);
@@ -8677,6 +9050,7 @@ static rtexture_t *R_Volumetric_GetNoiseTexture(void)
 	float s;
 	double sum = 0.0, sumsq = 0.0;
 	int nsamples = 0;
+	double hitch;
 	int v2 = r_volumetric_noise2.integer != 0;
 	int nsize = v2 ? bound(32, r_volumetric_noisesize.integer, 128) : VOL_NOISE_SIZE;
 	const model_t *world = cl.worldmodel;   // NULL at the menu: the v2 seed falls back to ""
@@ -8715,6 +9089,7 @@ static rtexture_t *R_Volumetric_GetNoiseTexture(void)
 		return r_volumetric_noisetexture;
 	}
 
+	hitch = Sys_HitchStart();	// METAL_HITCH: the classic noise bake
 	data = (unsigned char *)Mem_Alloc(tempmempool, VOL_NOISE_SIZE * VOL_NOISE_SIZE * VOL_NOISE_SIZE * 4);
 	if (!data)
 		return NULL;
@@ -8762,6 +9137,7 @@ static rtexture_t *R_Volumetric_GetNoiseTexture(void)
 		r_volumetric_noisebuilttune = 0.0f;
 		r_volumetric_noisemodel = NULL;
 	}
+	Sys_HitchReport(hitch, "bake", "noise classic");
 	return r_volumetric_noisetexture;
 }
 
@@ -9333,6 +9709,7 @@ static rtexture_t *R_Volumetric_GetField(void)
 	Con_Printf("volumetric field: %dx%dx%d cells (%.0f/%.0f/%.0f units), %.0f KB, baked in %.0f ms\n",
 		n[0], n[1], n[2], cell[0], cell[1], cell[2], bytes / 1024.0,
 		(Sys_DirtyTime() - starttime) * 1000.0);
+	Sys_HitchReport(starttime, "bake", "field %s", world->name);	// METAL_HITCH (a no-op unless set)
 	return r_volumetric_fieldtexture;
 }
 
@@ -9624,6 +10001,7 @@ static rtexture_t *R_Volumetric_GetIrradianceGrid(void)
 	Con_Printf("volumetric irradiance: %dx%dx%d cells (%.0f units), %.0f KB, baked in %.0f ms\n",
 		n[0], n[1], n[2], cell[0], bytes / 1024.0,
 		(Sys_DirtyTime() - starttime) * 1000.0);
+	Sys_HitchReport(starttime, "bake", "irradiance %s", world->name);	// METAL_HITCH (a no-op unless set)
 	return r_volumetric_irrtexture;
 }
 
@@ -10065,6 +10443,62 @@ static void R_Volumetric_ParseVec3(const char *s, float *out, float dx, float dy
 	}
 }
 
+/*
+================
+R_GammaAnalyticInverse (REVIEW 0.3, 2026-09-24)
+
+The pre-curve scene value the analytic gamma curve maps onto `target`, for the
+r_hdr_displayfit asymptote. The shoulder runs BEFORE the curve (scene units)
+and the ceiling it must aim at lives AFTER it (display-encoded units), so the
+curve has to be inverted to connect them. LOCKSTEP with the forward formula in
+three places -- dp_gamma_analytic (shader_msl.h), the USEGAMMAANALYTIC block in
+shader_glsl.h and BuildGammaTable16 (palette.c):
+
+	t = cb * c / ((cb - 1) * c + 1);   out = t^ig * sc + bs
+
+so t = ((target - bs) / sc)^(1/ig) and c = t / (cb - t * (cb - 1)).
+
+The MIN over the channels: the shoulder scales on the brightest channel, and
+the first channel to reach the ceiling is the one that decides where the
+roll-off must end. t == 1 returns exactly 1.0f because t(1) == 1 for every
+boost while t / (cb - t*(cb-1)) is not float-exact for every cb -- that guard
+is what keeps a v_contrast 1 configuration's uniform bit-identical. Capped at
+R_GAMMAFIT_MAX: HdrShoulder is a mediump vec2 in GLSL and must stay finite.
+Returns 0 when the curve is at or above the target everywhere; the caller
+floors that to 1.0, which both shaders do to .y anyway.
+================
+*/
+#define R_GAMMAFIT_MAX 64.0f
+// the last values R_HDR_DisplayFit handed over, for r_gamma_analytic_test
+static float r_hdr_fit_lastceiling = 1.0f, r_hdr_fit_lastasymptote = 1.0f;
+static float R_GammaAnalyticInverse(float target, const float ig[3], const float sc[3], const float bs[3], float cb)
+{
+	float best = R_GAMMAFIT_MAX, t, c, d;
+	int i;
+	for (i = 0; i < 3; i++)
+	{
+		if (!(sc[i] > 0.0f) || !(ig[i] > 0.0f))
+			continue;			// a degenerate channel cannot be aimed at
+		if (!(target - bs[i] > 0.0f))
+			return 0.0f;			// at or above the target everywhere; caller floors to 1.0
+		t = powf((target - bs[i]) / sc[i], 1.0f / ig[i]);
+		if (t == 1.0f)
+			c = 1.0f;			// t(1) == 1 for every boost; exact, the no-change case needs it
+		else if (cb == 1.0f)
+			c = t;
+		else
+		{
+			d = cb - t * (cb - 1.0f);
+			if (!(cb > 0.0f) || !(d > 0.0f))
+				continue;		// the boosted curve saturates below the target
+			c = t / d;
+		}
+		if (c < best)
+			best = c;
+	}
+	return best;
+}
+
 // True when the murk should be drawn this frame. Requires step 1's depth (which
 // r_volumetric forces) and a nonzero density.
 // Fill the murk's reprojection uniforms for a consumed RT texture of texw x texh
@@ -10101,7 +10535,10 @@ points spanning the input range:
 
 It compares 1 against 2 directly. It CANNOT reach 3 from here, and says so
 rather than implying otherwise: what covers the shader is the pixel bed, where
-r_gamma_analytic 0 against 1 must move only by the table's own quantisation.
+r_gamma_analytic 0 against 1 must move only by the table's own quantisation --
+unless r_hdr_displayfit is on with the shoulder and a darkening curve, where the
+analytic arm aims the roll-off past scene 1.0 and the table arm cannot (REVIEW
+0.3). Its second half round-trips that fit through the curve (below).
 
 EXPECT A SMALL NONZERO NUMBER, and understand why before reading it as a defect.
 The LUT is 256 entries of EIGHT BITS, sampled with linear interpolation: it
@@ -10154,6 +10591,33 @@ static void R_GammaAnalyticTest_f(struct cmd_state_s *cmd)
 	// the smoke test greps this verdict; 1.5 levels is comfortably above the
 	// table's own half-level rounding and far below any real divergence
 	Con_Printf("gamma analytic: %s\n", worst <= 1.5 ? "MATCHES the LUT within its quantisation" : "DIVERGES from the LUT");
+	// REVIEW 0.3: the r_hdr_displayfit inverse, round-tripped. At SDR white and
+	// two HDR grants the asymptote is pushed back through the FORWARD curve and
+	// its brightest channel must land on the ceiling (or under it, only where
+	// the inverse hit its cap). With per-channel colour controls on this is the
+	// case with teeth: three channels, three inverses, and only the MIN lands.
+	{
+		static const float grants[3] = { 1.0f, 1.756f, 4.0f };
+		qbool fitok = true;
+		int g;
+		for (g = 0; g < 3; g++)
+		{
+			float e = VID_EDREncode(grants[g]);
+			float a = R_GammaAnalyticInverse(e, ig, sc, bs, cb);
+			double t = cb * (double)a / ((cb - 1.0) * a + 1.0), top = 0.0;
+			for (c = 0; c < 3; c++)
+			{
+				double v = pow(t, ig[c]) * sc[c] + bs[c];
+				if (v > top) top = v;
+			}
+			if (top > e * (1.0 + 1e-4) || (top < e * (1.0 - 1e-4) && a < R_GAMMAFIT_MAX))
+				fitok = false;
+			Con_Printf("gamma analytic: display fit at headroom %.3f -> ceiling %.4f, inverse %.4f, brightest channel %.4f\n", grants[g], e, a, top);
+		}
+		Con_Printf("gamma analytic: live display fit %s -- headroom %.3f, ceiling %.4f, shoulder asymptote %.4f\n",
+			r_hdr_displayfit.integer ? "on" : "OFF", vid.edr_headroom, r_hdr_fit_lastceiling, r_hdr_fit_lastasymptote);
+		Con_Printf("gamma analytic: display fit %s\n", fitok ? "INVERTS the curve" : "BROKEN");
+	}
 }
 
 static void R_Shader_SetGammaAnalyticUniforms(float ceiling)
@@ -10178,6 +10642,60 @@ static void R_Shader_SetGammaAnalyticUniforms(float ceiling)
 	// this cannot make the picture darker however it is called.
 	if (r_glsl_permutation->loc_GammaAnalyticB >= 0) R_Shader_Uniform4f(r_glsl_permutation->loc_GammaAnalyticB, sc[0], sc[1], sc[2], ceiling);
 	if (r_glsl_permutation->loc_GammaAnalyticC >= 0) R_Shader_Uniform4f(r_glsl_permutation->loc_GammaAnalyticC, bs[0], bs[1], bs[2], 0.0f);
+}
+
+/*
+================
+R_HDR_DisplayFit (REVIEW 0.3, 2026-09-24)
+
+The analytic gamma's output ceiling and the highlight shoulder's asymptote, for
+the POSTPROCESS draw. One number used to serve both, in the wrong units twice:
+vid.edr_headroom is LINEAR light, the ceiling clamps DISPLAY-ENCODED values, and
+the shoulder runs BEFORE the gamma curve in scene units. Under r_hdr_displayfit:
+
+  - the ceiling is the grant in the drawable's own encoding (vid.edr_ceiling);
+  - the asymptote is the scene value whatever curve stands between the shoulder
+    and the screen maps onto that ceiling: no curve (trivial tables) -> the
+    ceiling itself; the analytic curve -> its exact inverse, floored at 1.0 as
+    both shaders already floor .y (which also keeps it above the 0.99-bounded
+    knee, and makes brightening curves the old picture exactly); the 256-entry
+    table -> 1.0, its input domain.
+
+It reads the BOUND program's bits (r_glsl_permutation->permutation), not
+R_BlendView's local, so the bit-stripping fallback cannot mislead it -- and it
+tests GAMMARAMPS before loc_GammaAnalyticA, because the MSL uniform struct
+declares GammaAnalyticA whenever USEGAMMAANALYTIC is defined, curve or not.
+0 returns vid.edr_headroom for both, the operands R_BlendView passed before.
+================
+*/
+static void R_HDR_DisplayFit(float *ceiling, float *asymptote)
+{
+	float ig[3], sc[3], bs[3], cb, a;
+	if (!r_hdr_displayfit.integer)
+		*ceiling = *asymptote = vid.edr_headroom;	// the old pairing, byte for byte
+	else
+	{
+		*ceiling = vid.edr_ceiling;
+		if (!(r_glsl_permutation->permutation & SHADERPERMUTATION_GAMMARAMPS))
+			*asymptote = *ceiling;			// no curve between shoulder and screen
+		else if (r_glsl_permutation->loc_GammaAnalyticA >= 0)
+		{
+			if (!VID_GetGammaAnalytic(ig, sc, bs, &cb))
+			{
+				// the identity R_Shader_SetGammaAnalyticUniforms falls back to
+				ig[0] = ig[1] = ig[2] = 1.0f;
+				sc[0] = sc[1] = sc[2] = 1.0f;
+				bs[0] = bs[1] = bs[2] = 0.0f;
+				cb = 1.0f;
+			}
+			a = R_GammaAnalyticInverse(*ceiling, ig, sc, bs, cb);	// once: max() double-evaluates
+			*asymptote = a > 1.0f ? a : 1.0f;
+		}
+		else
+			*asymptote = 1.0f;			// the 256-entry table: its input stops at 1.0
+	}
+	r_hdr_fit_lastceiling = *ceiling;
+	r_hdr_fit_lastasymptote = *asymptote;
 }
 
 static void R_Volumetric_SetReprojUniforms(int texw, int texh)
@@ -11150,6 +11668,7 @@ static void R_BlendView(rtexture_t *viewcolortexture, rtexture_t *viewdepthtextu
 {
 	uint64_t permutation;
 	float uservecs[4][4];
+	float hdrceiling, hdrasymptote;	// REVIEW 0.3: R_HDR_DisplayFit's pair
 	rtexture_t *viewtexture;
 	rtexture_t *bloomtexture;
 	rtexture_t *debugfield;
@@ -11238,11 +11757,14 @@ static void R_BlendView(rtexture_t *viewcolortexture, rtexture_t *viewdepthtextu
 			| (r_glsl_postprocess.integer ? SHADERPERMUTATION_POSTPROCESSING : 0)
 			| ((!R_Stereo_ColorMasking() && r_glsl_saturation.value != 1) ? SHADERPERMUTATION_SATURATION : 0);
 		R_SetupShader_SetPermutationGLSL(SHADERMODE_POSTPROCESS, permutation);
-		// The scene's ceiling is the granted display headroom (METAL.md Phase
-		// 7-3), read straight from its single writer rather than re-derived from
-		// a predicate here. 1.0 until 7-6 gives that field a writer, so this is
-		// the old clamp exactly.
-		R_Shader_SetGammaAnalyticUniforms(vid.edr_headroom);
+		// The scene's ceiling and the shoulder's asymptote come from ONE fit
+		// (REVIEW 0.3), so the two still cannot disagree about the frame's range:
+		// under r_hdr_displayfit the ceiling is the grant in the drawable's own
+		// encoding and the asymptote the scene value the live curve maps onto
+		// it; at 0 both are vid.edr_headroom, the Phase 7 pairing exactly. Called
+		// AFTER the permutation is bound -- the fit reads the bound program.
+		R_HDR_DisplayFit(&hdrceiling, &hdrasymptote);
+		R_Shader_SetGammaAnalyticUniforms(hdrceiling);
 		if (r_glsl_permutation->tex_Texture_First           >= 0) R_Mesh_TexBind(r_glsl_permutation->tex_Texture_First     , viewtexture);
 		if (r_glsl_permutation->tex_Texture_Second          >= 0) R_Mesh_TexBind(r_glsl_permutation->tex_Texture_Second    , bloomtexture);
 		if (r_glsl_permutation->tex_Texture_GammaRamps      >= 0) R_Mesh_TexBind(r_glsl_permutation->tex_Texture_GammaRamps, r_texture_gammaramps       );
@@ -11326,16 +11848,17 @@ static void R_BlendView(rtexture_t *viewcolortexture, rtexture_t *viewdepthtextu
 		// only dim the picture, never recover a highlight. Zeroed otherwise, which
 		// is also the exact old code path.
 		//
-		// .y is the asymptote the roll-off aims at -- 1.0 (SDR white) until EDR
-		// engages, whereupon it is whatever the OS granted. Same single source as
-		// the gamma ceiling above, deliberately: the two must not be able to
-		// disagree about how much range the frame has. Note the knee is bounded
-		// at 0.99 and NOT rescaled by the headroom: r_hdr_shoulder is authored
-		// against SDR white, so the knee stays put and the headroom lengthens the
+		// .y is the asymptote the roll-off aims at, from R_HDR_DisplayFit above:
+		// the pre-curve scene value the gamma curve maps onto the display's own
+		// ceiling under r_hdr_displayfit, or the old 1.0 / raw linear headroom at
+		// 0. Same fit as the gamma ceiling, deliberately: the two must not be
+		// able to disagree about how much range the frame has. Note the knee is
+		// bounded at 0.99 and NOT rescaled: r_hdr_shoulder is authored against
+		// SDR white, so the knee stays put and the headroom lengthens the
 		// roll-off above it, which is the whole point of having one.
 		if (r_glsl_permutation->loc_HdrShoulder             >= 0) R_Shader_Uniform2f(r_glsl_permutation->loc_HdrShoulder,
 			(R_ViewFBO() >= 2 || R_EDR_Wanted()) ? bound(0.0f, r_hdr_shoulder.value, 0.99f) : 0.0f,
-			vid.edr_headroom);
+			hdrasymptote);
 		break;
 	}
 	R_Mesh_Draw(0, 4, 0, 2, polygonelement3i, NULL, 0, polygonelement3s, NULL, 0);
@@ -11464,6 +11987,12 @@ void R_UpdateVariables(void)
 	// predicate ON PURPOSE: R_EDR_Wanted is what FORCES both, so testing the
 	// cvars here would make the ask depend on the very things it supplies.
 	vid.edr_wanted = R_EDR_Wanted();
+	// r_dither's renderer half, published once a frame for the Metal backend
+	// (the edr_wanted shape). ONE expression: Metal only (the backend is the
+	// only reader, and GL has no present pass of its own to dither in), and
+	// Stock suppresses it read-side like every modern feature.
+	vid.dither = (vid.renderpath == RENDERPATH_METAL && !m5_stock.integer && r_dither.value > 0.0f)
+	           ? min(r_dither.value, 2.0f) : 0.0f;
 
 	r_refdef.scene.ambientintensity = r_ambient.value * (1.0f / 64.0f);
 
@@ -11647,6 +12176,7 @@ void R_RenderView(int fbo, rtexture_t *depthtexture, rtexture_t *colortexture, i
 
 	if(R_CompileShader_CheckStaticParms())
 		R_GLSL_Restart_f(cmd_local);
+	R_ShaderWarm_Run();   // once after a start or a restart, now that the static parms are settled
 
 	if (!r_drawentities.integer)
 		r_refdef.scene.numentities = 0;
@@ -13069,6 +13599,19 @@ texture_t *R_GetCurrentTexture(texture_t *t)
 
 	if (t->currentmaterialflags & MATERIALFLAG_VERTEXCOLOR)
 	{
+		// HUD BRIGHTNESS (r_hud_brightness, REVIEW 0.4): in the 2D pass
+		// r_refdef.view.colorscale is the layer scale DrawQ_FlushUI handed it, and
+		// this is where it lands (Color_Diffuse, both renderpaths). A
+		// multiplicative 2D overlay -- DRAWFLAG_MODULATE / 2XMODULATE, the
+		// blendfuncs R_BlendFuncFlags says cannot keep the destination invariant
+		// under a colour scale -- is a filter, not light: scaled, it would DARKEN
+		// the picture under it instead of dimming itself, so the UI entity keeps
+		// those at unit scale. The old value exactly for every 3D entity (the test
+		// never fires) and for the 2D pass at the default (1.0f already).
+		const float vcscale = (ent == &cl_meshentities[MESH_UI].render
+			&& (t->currentmaterialflags & MATERIALFLAG_CUSTOMBLEND)
+			&& !(R_BlendFuncFlags(t->customblendfunc[0], t->customblendfunc[1]) & BLENDFUNC_ALLOWS_COLORMOD))
+			? 1.0f : r_refdef.view.colorscale;
 		// since MATERIALFLAG_VERTEXCOLOR uses the lightmapcolor4f vertex
 		// attribute, we punt it to the lightmap path and hope for the best,
 		// but lighting doesn't work.
@@ -13078,14 +13621,14 @@ texture_t *R_GetCurrentTexture(texture_t *t)
 		t->currentmaterialflags &= ~(MATERIALFLAG_MODELLIGHT | MATERIALFLAG_LIGHTGRID);
 		for (q = 0; q < 3; q++)
 		{
-			t->render_glowmod[q] = rsurface.entity->render_glowmod[q] * r_refdef.view.colorscale;
+			t->render_glowmod[q] = rsurface.entity->render_glowmod[q] * vcscale;
 			t->render_modellight_lightdir_world[q] = q == 2;
 			t->render_modellight_lightdir_local[q] = q == 2;
 			t->render_modellight_ambient[q] = 0;
 			t->render_modellight_diffuse[q] = 0;
 			t->render_modellight_specular[q] = 0;
 			t->render_lightmap_ambient[q] = 0;
-			t->render_lightmap_diffuse[q] = rsurface.entity->render_fullbright[q] * r_refdef.view.colorscale;
+			t->render_lightmap_diffuse[q] = rsurface.entity->render_fullbright[q] * vcscale;
 			t->render_lightmap_specular[q] = 0;
 			t->render_rtlight_diffuse[q] = 0;
 			t->render_rtlight_specular[q] = 0;

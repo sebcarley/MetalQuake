@@ -241,6 +241,17 @@ sys_cleantime_t;
 
 double Sys_DirtyTime(void);
 
+/// METAL_HITCH=<ms> (2026-09-24): the first-use stall reporter. Sys_HitchStart
+/// returns Sys_DirtyTime() while the variable holds a positive number and 0
+/// otherwise -- read once, on the first call from anywhere. Sys_HitchReport
+/// prints "HITCH <what> <ms> ms frame <n> <detail>" to stderr when the span
+/// since t0 reached that many milliseconds. Unset, 0 or negative is OFF, the
+/// convention of every other env instrument here (METAL_FRAMEMS=0 is off too);
+/// a tiny value such as 0.001 reports every event, a census. Off, each call is
+/// one cached test and a return: no clock read, nothing formatted.
+double Sys_HitchStart(void);
+void Sys_HitchReport(double t0, const char *what, const char *fmt, ...) DP_FUNC_PRINTF(3);
+
 void Sys_ProvideSelfFD (void);
 
 /// Reads a line from POSIX stdin or the Windows console

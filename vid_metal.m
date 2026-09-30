@@ -22,6 +22,7 @@ macosx, matching rt_metal.o). ARC is on: no manual retain/release.
 // genuinely new link, and it is added to both build systems in this slice.
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
+#include <mach/mach.h>   // task_info: METAL_TEST_NODRAWABLE's footprint line
 
 #include <SDL.h>
 #include <SDL_metal.h>
@@ -40,6 +41,20 @@ static id<MTLDevice>      vm_dev;
 static id<MTLCommandQueue> vm_queue;
 static unsigned long      vm_frames;   // presented frames, for the stderr heartbeat
 static int                vm_probe;    // VID_METAL_PROBE: read the drawable back and report
+static int                vm_testnodraw;      // METAL_TEST_NODRAWABLE: withhold N drawables in every N+1 (a test hook)
+static unsigned long      vm_testcycle;
+static double             vm_testnextreport;
+
+// METAL_TEST_NODRAWABLE's instrument: the process's physical footprint (the figure
+// Activity Monitor and Xcode's gauge show) as "<seconds> <MB>", so a bed can take
+// the growth between two readings. Env-gated: never prints in play.
+static void vm_test_footprint(void)
+{
+	task_vm_info_data_t vi;
+	mach_msg_type_number_t n = TASK_VM_INFO_COUNT;
+	if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vi, &n) == KERN_SUCCESS)
+		Con_Printf("METAL_TEST_NODRAWABLE footprint %d %d\n", (int)host.realtime, (int)(vi.phys_footprint >> 20));
+}
 
 // ---------------------------------------------------------------------------
 // EDR (METAL.md Phase 7-4)
@@ -341,6 +356,18 @@ qbool VID_Metal_Init(struct SDL_Window *sdlwindow, qbool vsync)
 	// faster configuration. Grows into the Phase 3 screenshot readback.
 	vm_probe = (getenv("VID_METAL_PROBE") && atoi(getenv("VID_METAL_PROBE"))) ? 1 : 0;
 	vm_layer.framebufferOnly = vm_probe ? NO : YES;
+	// METAL_TEST_NODRAWABLE=N: a test hook (REVIEW 0.2) that withholds the drawable
+	// on N frames of every N+1 -- the path an occluded or minimised window takes,
+	// without occluding one. Announced so a bed can prove the env reached us.
+	vm_testnodraw = getenv("METAL_TEST_NODRAWABLE") ? atoi(getenv("METAL_TEST_NODRAWABLE")) : 0;
+	if (vm_testnodraw < 0)
+		vm_testnodraw = 0;
+	if (vm_testnodraw > 1000000)
+		vm_testnodraw = 1000000;
+	vm_testcycle = 0;
+	vm_testnextreport = 0.0;
+	if (vm_testnodraw)
+		Con_Printf("Metal video: METAL_TEST_NODRAWABLE=%d -- withholding %d of every %d drawables (a test hook: the occluded-window path)\n", vm_testnodraw, vm_testnodraw, vm_testnodraw + 1);
 	// The initial value; live changes (menu, console, and the timedemo
 	// force-off) arrive through VID_Metal_SetVsync via the cvar callback's
 	// Metal arm (Phase 8-2 rider -- this line was init-only for eight phases,
@@ -431,6 +458,14 @@ void VID_Metal_Finish(void)
 		// together and the two cancel, so a filter here would show as a visible
 		// drift where the raw value shows as nothing.
 		vid.edr_headroom = vid.edr_active ? vm_edr_headroom : 1.0f;
+		// REVIEW 0.3: the ceiling in the drawable's OWN encoding. The headroom
+		// is linear light; the postprocess writes display-encoded values, and
+		// macOS undoes the tag's transfer function before comparing them with
+		// the grant. The extended-LINEAR tag (r_edr_colorspace 2) has no curve;
+		// sRGB and P3 share the sRGB one; the untagged diagnostic (0) is taken
+		// as sRGB, which is what an untagged drawable is shown as.
+		vid.edr_ceiling = !vid.edr_active ? 1.0f
+		                : (vm_edr_appliedcs == 2 ? vm_edr_headroom : VID_EDREncode(vm_edr_headroom));
 
 		// the armed r_edr_report series. Sampled here rather than from the
 		// command, because "did the grant arrive, and when" cannot be answered
@@ -443,9 +478,30 @@ void VID_Metal_Finish(void)
 				vm_edr_reportnext = -1;
 		}
 
-		drawable = [vm_layer nextDrawable];
+		if (vm_testnodraw && host.realtime >= vm_testnextreport)
+		{
+			vm_test_footprint();
+			vm_testnextreport = host.realtime + 5.0;
+		}
+
+		// METAL_TEST_NODRAWABLE=N (a test hook; off unless the environment asks):
+		// withhold the drawable on N frames of every N+1 -- exactly the path an
+		// occluded or minimised window takes, without occluding one.
+		if (vm_testnodraw > 0 && (vm_testcycle++ % (unsigned long)(vm_testnodraw + 1)) != 0)
+			drawable = nil;
+		else
+			drawable = [vm_layer nextDrawable];
 		if (!drawable)
-			return; // window occluded or mid-resize; skip the frame
+		{
+			// Nowhere to present -- occluded or minimised, display asleep,
+			// mid-resize, or nextDrawable's one-second timeout
+			// (allowsNextDrawableTimeout is never changed here, so YES). The frame
+			// is already encoded; EndFrame with NULL ends and commits it without a
+			// present. A bare return here was the 2026-09-24 leak: the next frame
+			// appended to the uncommitted buffer for as long as drawables stayed away.
+			Metal_Backend_EndFrame(NULL, 0);
+			return;
+		}
 		// counted here, not after presenting, so the probe's early return inside
 		// EndFrame cannot freeze the counter (it did, and re-fired every frame)
 		++vm_frames;
@@ -481,6 +537,7 @@ void VID_Metal_Shutdown(void)
 	vm_edr_headroom = vm_edr_potential = 1.0f;
 	vid.edr_active = false;
 	vid.edr_headroom = 1.0f;
+	vid.edr_ceiling = 1.0f;	// REVIEW 0.3: a metal -> gl round trip must not keep a stale ceiling
 	vm_edr_saidclass = 0;
 	vm_edr_reportnext = -1;
 	if (vm_layer_cs0) { CGColorSpaceRelease(vm_layer_cs0); vm_layer_cs0 = NULL; }

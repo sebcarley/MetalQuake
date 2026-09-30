@@ -152,6 +152,12 @@ void DrawQ_Finish(void);
 void DrawQ_FlushUI(void);
 // use this when changing r_refdef.view.* from e.g. csqc
 void DrawQ_RecalcView(void);
+// HUD BRIGHTNESS (REVIEW 0.4): r_hud_brightness bounded to 0.1-1 (exactly 1.0f at
+// the default); prints one developer line when it changes
+float DrawQ_HUDBrightness(void);
+// the colour scale the next DrawQ_FlushUI hands the 2D batch (1 = as drawn); a
+// change flushes what is already queued first, an unchanged value does nothing
+void DrawQ_SetUIColorScale(float scale);
 
 // draw an image (or a filled rectangle if pic == NULL)
 void DrawQ_Pic(float x, float y, cachepic_t *pic, float width, float height, float red, float green, float blue, float alpha, int flags);

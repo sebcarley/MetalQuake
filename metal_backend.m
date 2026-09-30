@@ -46,7 +46,8 @@ vid_metal.o and metal_textures.o). ARC is on.
 #define MB_PROGRAM_CLEAR    2
 #define MB_PROGRAM_PRESENT  3
 #define MB_PROGRAM_BLIT     4    // METAL.md Phase 7-5: the format-converting copy
-#define MB_PROGRAM_FIRSTREAL 5   // ids at or above this index mb_programs[]
+#define MB_PROGRAM_PRESENTDITHER 5   // REVIEW 0.5: the present pass with r_dither's output dither
+#define MB_PROGRAM_FIRSTREAL 6   // ids at or above this index mb_programs[]
 
 // ---------------------------------------------------------------------------
 // the shaders
@@ -151,6 +152,42 @@ static const char *kBackendSrc =
 "	return src.sample(s, in.uv);\n"
 "}\n"
 "\n"
+"// r_dither (REVIEW 0.5). THE one place the frame is squeezed to 8 bits while\n"
+"// r_dither holds the screen texture float: a static TPDF dither of up to one\n"
+"// level either way, a hash of the texel the nearest sample just read (GL\n"
+"// layout, row 0 at the bottom -- the readback's own index), so screenshots\n"
+"// and beds stay deterministic. Exact black and white stay exact (g fades the\n"
+"// dither to 0 within a level of either end, and to 0 above white).\n"
+"// LOCKSTEP with mb_dither_pcg / mb_dither_tpdf / mb_readback_convert_dither\n"
+"// (C, below): one hash of one coordinate, the same arithmetic in the same order.\n"
+"struct mb_ditherparams\n"
+"{\n"
+"	float4 p;   // .x = amplitude in 8-bit levels\n"
+"};\n"
+"\n"
+"static inline uint mb_dither_pcg(uint v)\n"
+"{\n"
+"	uint s = v * 747796405u + 2891336453u;\n"
+"	uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;\n"
+"	return (w >> 22u) ^ w;\n"
+"}\n"
+"\n"
+"fragment float4 mb_present_dither_f(mb_present_out in [[stage_in]],\n"
+"                                    texture2d<float> src [[texture(0)]],\n"
+"                                    constant mb_ditherparams &p [[buffer(16)]])\n"
+"{\n"
+"	constexpr sampler s(filter::nearest, address::clamp_to_edge);\n"
+"	float4 c = src.sample(s, in.uv);\n"
+"	// in.uv * size lands on a texel centre, so truncation is exact\n"
+"	uint2 t = uint2(in.uv * float2(float(src.get_width()), float(src.get_height())));\n"
+"	uint h1 = mb_dither_pcg(t.x + mb_dither_pcg(t.y));\n"
+"	uint h2 = mb_dither_pcg(h1);\n"
+"	float d = (float(h1 >> 8) - float(h2 >> 8)) * (1.0 / 16777216.0);\n"
+"	float3 g = clamp(min(c.rgb, 1.0 - c.rgb) * 255.0, 0.0, 1.0);\n"
+"	c.rgb += (d * p.p.x * (1.0 / 255.0)) * g;\n"
+"	return c;\n"
+"}\n"
+"\n"
 "struct mb_blitparams\n"
 "{\n"
 "	float4 uvrect;   // xy = source origin, zw = source extent, normalised\n"
@@ -250,6 +287,8 @@ static id<MTLRenderCommandEncoder> mb_enc;
 // buffer's GPU time, accumulated from its completion handler on the GPU
 // callback thread and read on the main thread every 120 frames.
 static int mb_framems;
+static int mb_shadercoldcache;   // METAL_SHADER_COLDCACHE=1: a unique comment in every permutation's MSL, so Metal's
+                                 // shader cache misses every compile -- the way to read a COLD compile cost with METAL_HITCH
 static unsigned int mb_framems_frames;
 static _Atomic unsigned long long mb_framems_ns;
 static _Atomic unsigned long long mb_framems_n;
@@ -271,8 +310,9 @@ static int mb_region_open;
 // alive. rt_metal.m has always pooled its own per-frame work, which is why
 // the sidecar never showed this and why months of GL+sidecar sessions were
 // clean; the renderer path never had a pool. Drain-and-renew at frame start
-// rather than a push/pop pair, so a frame that never reaches EndFrame (no
-// drawable, restart mid-frame) cannot stack pools; Shutdown drains the last
+// rather than a push/pop pair, so a frame that never reaches EndFrame (the
+// vid_hidden early-out, the loading screen's rate limiter, a restart
+// mid-frame or a Host_Error abort) cannot stack pools; Shutdown drains the last
 // one. These two functions are what @autoreleasepool compiles to -- the
 // block form cannot span a frame across function boundaries.
 extern void *objc_autoreleasePoolPush(void);
@@ -721,10 +761,12 @@ static MTLVertexDescriptor *mb_vertexdescriptor(void)
 static qbool mb_ensurelibrary(void)
 {
 	NSError *err = nil;
+	double hitch;
 	if (mb_lib)
 		return true;
 	if (!mb_dev)
 		return false;
+	hitch = Sys_HitchStart();	// METAL_HITCH: the backend's own library, first 2D draw
 	mb_lib = [mb_dev newLibraryWithSource:[NSString stringWithUTF8String:kBackendSrc]
 	                              options:nil
 	                                error:&err];
@@ -734,6 +776,7 @@ static qbool mb_ensurelibrary(void)
 		           err ? [[err localizedDescription] UTF8String] : "unknown error");
 		return false;
 	}
+	Sys_HitchReport(hitch, "msl", "builtin library");
 	return true;
 }
 
@@ -827,6 +870,7 @@ int Metal_Backend_CompilePermutation(unsigned int mode, uint64_t permutation, co
 	NSError *err = nil;
 	mb_program_t *p;
 	int i, id_;
+	double hitch, rhitch;
 
 	if (!mb_dev)
 		return 0;
@@ -838,6 +882,8 @@ int Metal_Backend_CompilePermutation(unsigned int mode, uint64_t permutation, co
 		Con_Printf(CON_ERROR "Metal_Backend: out of shader program slots (%d)\n", MB_MAX_PROGRAMS);
 		return 0;
 	}
+	// METAL_HITCH: started after the cache lookup, so a hit is never timed
+	hitch = Sys_HitchStart();
 
 	// the caller's pretext, then the shared body -- the same two halves the GLSL
 	// compiler is handed, in the same order
@@ -862,6 +908,8 @@ int Metal_Backend_CompilePermutation(unsigned int mode, uint64_t permutation, co
 	p->mode = mode;
 	p->permutation = permutation;
 
+	if (mb_shadercoldcache)   // METAL_SHADER_COLDCACHE: defeat the shader cache (see the static)
+		[src appendFormat:@"\n// coldcache %.0f.%d\n", Sys_DirtyTime() * 1000.0, id_];
 	p->lib = [mb_dev newLibraryWithSource:src options:opts error:&err];
 	if (!p->lib)
 	{
@@ -879,6 +927,10 @@ int Metal_Backend_CompilePermutation(unsigned int mode, uint64_t permutation, co
 		p->lib = nil; p->vfunc = nil; p->ffunc = nil;
 		return 0;
 	}
+	Sys_HitchReport(hitch, "msl", "mode %u perm %llx", mode, (unsigned long long)permutation);
+	// the reflection pipeline is a whole back-end compile per permutation that
+	// exists only to read the uniform layout, so it is timed on its own
+	rhitch = Sys_HitchStart();
 
 	// Reflect once, off a canonical pipeline. BindingInfo alone gives the
 	// bindings; BufferTypeInfo is what makes bufferStructType (and therefore the
@@ -900,6 +952,7 @@ int Metal_Backend_CompilePermutation(unsigned int mode, uint64_t permutation, co
 		p->lib = nil; p->vfunc = nil; p->ffunc = nil;
 		return 0;
 	}
+	Sys_HitchReport(rhitch, "reflect", "mode %u perm %llx", mode, (unsigned long long)permutation);
 	mb_addreflected(p, refl.vertexBindings);
 	mb_addreflected(p, refl.fragmentBindings);
 	if (p->uniformbytes > MB_UNIFORM_MAXBYTES)
@@ -1044,6 +1097,7 @@ static id<MTLRenderPipelineState> mb_pipeline_get(const mb_pipelinekey_t *key)
 	id<MTLRenderPipelineState> pso;
 	unsigned int h;
 	int bucket, i;
+	double hitch;
 
 	h = mb_fnv32(2166136261u, key, sizeof(*key));
 	bucket = (int)(h & (MB_PSO_HASH - 1));
@@ -1088,6 +1142,11 @@ static id<MTLRenderPipelineState> mb_pipeline_get(const mb_pipelinekey_t *key)
 		pd.fragmentFunction = [mb_lib newFunctionWithName:@"mb_present_f"];
 		// generated from vertex_id, so no vertex descriptor at all
 		break;
+	case MB_PROGRAM_PRESENTDITHER:
+		pd.vertexFunction   = [mb_lib newFunctionWithName:@"mb_present_v"];
+		pd.fragmentFunction = [mb_lib newFunctionWithName:@"mb_present_dither_f"];
+		// generated from vertex_id, exactly like PRESENT (REVIEW 0.5)
+		break;
 	case MB_PROGRAM_BLIT:
 		pd.vertexFunction   = [mb_lib newFunctionWithName:@"mb_blit_v"];
 		pd.fragmentFunction = [mb_lib newFunctionWithName:@"mb_blit_f"];
@@ -1122,12 +1181,22 @@ static id<MTLRenderPipelineState> mb_pipeline_get(const mb_pipelinekey_t *key)
 	             | ((key->colormask & 4) ? MTLColorWriteMaskBlue  : 0)
 	             | ((key->colormask & 8) ? MTLColorWriteMaskAlpha : 0);
 
+	hitch = Sys_HitchStart();	// METAL_HITCH: the cache-miss branch only
 	pso = [mb_dev newRenderPipelineStateWithDescriptor:pd error:&err];
 	if (!pso)
 	{
 		Con_Printf(CON_ERROR "Metal_Backend: pipeline creation failed: %s\n",
 		           err ? [[err localizedDescription] UTF8String] : "unknown error");
 		return nil;
+	}
+	// Reported on SUCCESS only: a failed pipeline is not memoised, so every
+	// draw with that key retries -- a report above the nil check would be a
+	// line per draw per frame, the console-ink class.
+	{
+		mb_program_t *hp = mb_programfor(key->program);	// NULL for the built-ins
+		Sys_HitchReport(hitch, "pso", "prog %d mode %u perm %llx colour %u depth %u",
+		                (int)key->program, hp ? hp->mode : 0u, hp ? (unsigned long long)hp->permutation : 0ull,
+		                (unsigned)key->colorformat, (unsigned)key->depthformat);
 	}
 
 	i = ++mb_numpsos;
@@ -1226,6 +1295,19 @@ static void mb_flush(void)
 	{
 		[mb_cb commit];
 		[mb_cb waitUntilCompleted];
+		mb_cb = nil;
+	}
+}
+
+// End the open encoder and commit WITHOUT waiting, leaving no buffer open.
+// mb_flush's twin for a frame end: a readback needs the wait, a frame end
+// must never have it (EndFrame's present says why).
+static void mb_commit_nowait(void)
+{
+	mb_end_encoder();
+	if (mb_cb)
+	{
+		[mb_cb commit];
 		mb_cb = nil;
 	}
 }
@@ -1481,10 +1563,15 @@ void Metal_Backend_Start(void)
 	Metal_Backend_ResetState();
 	Con_Printf("Metal backend started\n");
 	{ const char *e = getenv("METAL_FRAMEMS"); mb_framems = e ? atoi(e) : 0; if (mb_framems < 0) mb_framems = 0; }
+	{ const char *e = getenv("METAL_SHADER_COLDCACHE"); mb_shadercoldcache = e ? atoi(e) : 0; }
 	// METAL.md Phase 8-4: probe MetalFX against the device that just came up.
 	// Must run before the first BeginFrame, whose screen-texture descriptor
 	// reads the queried output-usage bits.
-	MetalFX_Start();
+	{
+		double hitch = Sys_HitchStart();	// METAL_HITCH: the MetalFX boot probes
+		MetalFX_Start();
+		Sys_HitchReport(hitch, "metalfx", "probe");
+	}
 }
 
 void Metal_Backend_Shutdown(void)
@@ -2306,10 +2393,36 @@ void Metal_Backend_BeginFrame(int width, int height)
 	// condition below for the same reason the size is: a stale texture of the
 	// wrong format is a validation failure at the first draw, not a picture
 	// somebody notices.
-	MTLPixelFormat want = vid.edr_active ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
+	//
+	// r_dither (REVIEW 0.5) asks for the same float texture WITHOUT the float
+	// drawable, so the frame -- scene, MetalFX, MLAA, HUD -- stays above 8 bits
+	// until the present, the one place it is then quantised (and dithered).
+	// vid.dither is 0 unless r_dither is on, so this is the old expression then.
+	MTLPixelFormat want = (vid.edr_active || vid.dither > 0.0f) ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
 
 	if (!mb_started || !mb_dev || width <= 0 || height <= 0)
 		return;
+	// A FRAME'S COMMAND BUFFER MUST NOT OUTLIVE THE FRAME (REVIEW 0.2). Every
+	// frame that reaches Metal_Backend_EndFrame is committed there, with or
+	// without a present. A buffer still open here holds work encoded BETWEEN
+	// frames -- the loading screen's background copy
+	// (SCR_SetLoadingScreenTexture under scr_loadingscreen_background), frames
+	// drawn while vid_hidden during a video capture, a Host_Error longjmp out of
+	// a frame -- and every lazy creator in this file would append this frame to
+	// it. Commit it now, unwaited: nothing of this frame has been encoded yet, so
+	// the queue order is the one an EndFrame would have given it. First event
+	// only, developer-level: it is housekeeping, not a defect, on those paths;
+	// smoke run J7 asserts it never fires on its bed.
+	if (mb_cb)
+	{
+		static int said;
+		if (!said)
+		{
+			said = 1;
+			Con_DPrintf("Metal_Backend: committed GPU work still open when this frame began (work encoded between frames, or a frame that ended without EndFrame)\n");
+		}
+		mb_commit_nowait();
+	}
 	// drain last frame's autoreleased Metal objects and open this frame's
 	// pool -- see the mb_framepool comment at the top of this file
 	if (mb_framepool)
@@ -2370,6 +2483,15 @@ void Metal_Backend_BeginFrame(int width, int height)
 	mb_targetheight = mb_screenh;
 }
 
+// THE truth for "fbo 0 is float this frame" (EDR or r_dither), read off the
+// texture BeginFrame made rather than re-derived from a predicate, so the
+// MetalFX output key and the post-AA target cannot disagree with the
+// destination they are handed (REVIEW 0.5).
+qbool Metal_Backend_ScreenIsFloat(void)
+{
+	return mb_screentex != nil && mb_screentex.pixelFormat == MTLPixelFormatRGBA16Float;
+}
+
 // SEPTEMBER2 A2 (2026-09-06): same-frame RT pipelining. Under rt_metal_sameframe
 // the composite hook commits the sidecar's trace and WAITS for it, while the
 // whole raster encoded so far sits in mb_cb uncommitted until EndFrame -- so
@@ -2420,6 +2542,8 @@ void Metal_Backend_ProfileRegion(int begin, const char *label)
 	mb_cb = nil;
 }
 
+static qbool mb_readback(id<MTLTexture> tex, int x, int y, int width, int height, unsigned char *out);
+
 void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 {
 	id<CAMetalDrawable> drawable = (__bridge id<CAMetalDrawable>)drawableptr;
@@ -2428,9 +2552,31 @@ void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 	mb_pipelinekey_t key;
 	id<MTLRenderPipelineState> pso;
 	MTLViewport vp;
+	qbool dithering;	// REVIEW 0.5: the float screen is quantised (and dithered) HERE
 
 	if (!drawable)
+	{
+		// NO DRAWABLE THIS FRAME -- occluded or minimised window, display asleep,
+		// a layer mid-resize, or nextDrawable's one-second timeout. The frame is
+		// ALREADY encoded in mb_cb, and every lazy creator in this file reuses a
+		// non-nil mb_cb, so returning without a commit (as this did until
+		// 2026-09-24) let the next frame append to it for as long as drawables
+		// stayed away -- pinning each frame's orphaned dynamic buffers
+		// (Metal_Backend_BufferUpdate allocates fresh every frame; the command
+		// buffer retains the old one) and a growing command stream: measured
+		// ~13 MB/s at 30 fps under validation. Commit without a present:
+		// completion releases what the frame held. Committed rather than dropped,
+		// so its persistent writes (texture copies, the temporal scaler's
+		// history) stay in step with the CPU. First event only.
+		static int said;
+		if (!said && mb_cb)
+		{
+			said = 1;
+			Con_DPrintf("Metal_Backend: no drawable this frame; its work was committed without a present\n");
+		}
+		mb_commit_nowait();
 		return;
+	}
 	mb_end_encoder();
 	if (!mb_cb)
 	{
@@ -2438,6 +2584,11 @@ void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 		mb_cb.label = @"QuakeM5 frame";
 	}
 
+	// r_dither (REVIEW 0.5): the float screen meets an 8-bit drawable here and
+	// nowhere else, so this is where the dither goes. Under EDR the drawable is
+	// float too and nothing is quantised -- only 8-bit readbacks are dithered.
+	dithering = vid.dither > 0.0f && mb_screentex && mb_screentex.pixelFormat == MTLPixelFormatRGBA16Float
+	         && drawable.texture.pixelFormat == MTLPixelFormatBGRA8Unorm;
 	rp = [MTLRenderPassDescriptor renderPassDescriptor];
 	rp.colorAttachments[0].texture     = drawable.texture;
 	rp.colorAttachments[0].loadAction  = MTLLoadActionDontCare;   // the pass covers every pixel
@@ -2446,7 +2597,7 @@ void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 	if (enc)
 	{
 		memset(&key, 0, sizeof(key));
-		key.program     = MB_PROGRAM_PRESENT;
+		key.program     = dithering ? MB_PROGRAM_PRESENTDITHER : MB_PROGRAM_PRESENT;
 		key.colormask   = 15;
 		key.blendsrc    = GL_ONE;
 		key.blenddst    = GL_ZERO;
@@ -2464,9 +2615,34 @@ void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 			[enc setCullMode:MTLCullModeNone];
 			[enc setRenderPipelineState:pso];
 			[enc setFragmentTexture:mb_screentex atIndex:0];
+			if (dithering)
+			{
+				float dp[4];
+				dp[0] = vid.dither; dp[1] = dp[2] = dp[3] = 0.0f;
+				[enc setFragmentBytes:dp length:sizeof(dp) atIndex:16];
+			}
 			[enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 		}
 		[enc endEncoding];
+	}
+	{
+		// change-only report, keyed on cvar-derived state (the console-ink rule):
+		// 1 dithering at the present, 2 an extended-range drawable (readbacks
+		// only), 0 off; the one transitional frame keeps the previous state
+		static int saiddither = 0;
+		int now = vid.dither <= 0.0f ? 0
+		        : (drawable.texture.pixelFormat == MTLPixelFormatRGBA16Float ? 2
+		        : (dithering ? 1 : saiddither));
+		if (now != saiddither)
+		{
+			saiddither = now;
+			if (now == 1)
+				Con_DPrintf("r_dither: the present dithers the float screen into the 8-bit drawable (+-%.2f levels)\n", vid.dither);
+			else if (now == 2)
+				Con_DPrintf("r_dither: the drawable is extended-range; only 8-bit readbacks (screenshots, dumps, captures) are dithered\n");
+			else
+				Con_DPrintf("r_dither: off\n");
+		}
 	}
 
 	// METAL.md Phase 7-5's EDR instrument. It is the ONLY thing in this tree
@@ -2483,6 +2659,10 @@ void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 	{
 		mb_extendedstats(mb_screentex,    "screentex");
 		mb_extendedstats(drawable.texture, "drawable ");
+		// REVIEW 0.3: Phase 7's acceptance compared these two units as one number
+		// ("max 1.756, exactly the headroom") -- the drawable is ENCODED, the
+		// grant LINEAR. Read the maxima above against the second figure.
+		Con_Printf("r_edr_probe: granted headroom %.3f (linear) = %.3f in the drawable's encoding -- the most any channel above can actually be shown at\n", vid.edr_headroom, vid.edr_ceiling);
 		// Falls through to the present below -- unlike the flatness probe, this
 		// one MUST present, because macOS stops granting headroom to a layer
 		// that has stopped putting frames on screen. WHICH DID NOT HAPPEN until
@@ -2522,6 +2702,9 @@ void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 			        w, h, (int)drawable.texture.pixelFormat);
 			fflush(stderr);
 			if (px) Mem_Free(px);
+			// EndFrame never leaves a buffer open: the present pass above is
+			// committed and the drawable dropped unpresented, as the probe intends
+			mb_commit_nowait();
 			return;
 		}
 		blit = [mb_cb blitCommandEncoder];
@@ -2552,6 +2735,37 @@ void Metal_Backend_EndFrame(void *drawableptr, int probeframe)
 			        w, h, differing, w * h,
 			        differing ? "A FRAME REACHED THE DRAWABLE" : "FLAT (present pass drew nothing)");
 			fflush(stderr);
+		}
+		// r_dither's LOCKSTEP proof (REVIEW 0.5): the drawable the MSL present
+		// dithered, against the C readback dither of the same float screen.
+		// The present v-flips (drawable row r is screen row h-1-r). Equal
+		// bar rare fused-multiply-add knife edges, or the two copies drifted.
+		if (dithering && mb_screentex && (size_t)mb_screenw == w && (size_t)mb_screenh == h)
+		{
+			unsigned char *sp = (unsigned char *)Mem_Alloc(tempmempool, w * h * 4);
+			if (sp && mb_readback(mb_screentex, 0, 0, (int)w, (int)h, sp))
+			{
+				size_t x, y, off = 0;
+				int c, dmax = 0;
+				for (y = 0; y < h; y++)
+					for (x = 0; x < w; x++)
+					{
+						const unsigned char *a = px + (y * w + x) * 4;
+						const unsigned char *b = sp + ((h - 1 - y) * w + x) * 4;
+						int bad = 0;
+						for (c = 0; c < 3; c++)
+						{
+							int d = a[c] > b[c] ? a[c] - b[c] : b[c] - a[c];
+							if (d) bad = 1;
+							if (d > dmax) dmax = d;
+						}
+						off += bad;
+					}
+				fprintf(stderr, "VID_METAL_PROBE dither: %zu of %zu pixels differ between the dithered present and the dithered readback (max delta %d) -> %s\n",
+				        off, w * h, dmax, (dmax <= 1 && off * 1000 <= w * h) ? "LOCKSTEP" : "DRIFTED");
+				fflush(stderr);
+			}
+			if (sp) Mem_Free(sp);
 		}
 		Mem_Free(px);
 		return;   // deliberately not presented, exactly as the Phase 0 probe did
@@ -2643,6 +2857,10 @@ static size_t mb_bytesperpixel(MTLPixelFormat fmt)
 //
 // The BGRA8 arm is a straight memcpy and is therefore the old code byte for
 // byte; the others are new and unreachable until 7-5 moves a format.
+//
+// r_dither (REVIEW 0.5) perturbs a readback of the FLOAT SCREEN by up to a level
+// by design -- mb_readback_convert_dither, below -- so that a screenshot is the
+// SDR display's picture. Parity and metric beds pin r_dither 0.
 static qbool mb_readback_convert(MTLPixelFormat fmt, const void *src, size_t npixels, unsigned char *out)
 {
 	size_t i;
@@ -2700,6 +2918,55 @@ static qbool mb_readback_convert(MTLPixelFormat fmt, const void *src, size_t npi
 	}
 }
 
+// r_dither's CPU half (REVIEW 0.5). A readback of the float screen is the
+// picture an SDR display shows, so it takes the SAME dither the present pass
+// applies -- LOCKSTEP with mb_present_dither_f (MSL, above): one hash of one
+// coordinate (the texel's GL-layout column and row), the same arithmetic in the
+// same order, to within a rare knife-edge level where the GPU fuses a
+// multiply-add the CPU rounds separately. The VID_METAL_PROBE drawable arm
+// measures exactly that. Parity and metric beds pin r_dither 0.
+static uint32_t mb_dither_pcg(uint32_t v)
+{
+	uint32_t s = v * 747796405u + 2891336453u;
+	uint32_t w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+	return (w >> 22u) ^ w;
+}
+
+static float mb_dither_tpdf(uint32_t x, uint32_t y)
+{
+	uint32_t h1 = mb_dither_pcg(x + mb_dither_pcg(y));
+	uint32_t h2 = mb_dither_pcg(h1);
+	return ((float)(h1 >> 8) - (float)(h2 >> 8)) * (1.0f / 16777216.0f);
+}
+
+// mb_readback_convert with the dither: float formats only (anything else is
+// already quantised and has nothing to dither); alpha is never dithered.
+static qbool mb_readback_convert_dither(MTLPixelFormat fmt, const void *src, int x0, int y0, int width, int height, float amp, unsigned char *out)
+{
+	size_t i, n = (size_t)width * (size_t)height;
+	if (fmt != MTLPixelFormatRGBA16Float && fmt != MTLPixelFormatRGBA32Float)
+		return mb_readback_convert(fmt, src, n, out);
+	for (i = 0; i < n; i++)
+	{
+		float d = mb_dither_tpdf((uint32_t)(x0 + (int)(i % (size_t)width)), (uint32_t)(y0 + (int)(i / (size_t)width)));
+		int c;
+		for (c = 0; c < 4; c++)
+		{
+			float v = (fmt == MTLPixelFormatRGBA16Float) ? (float)((const __fp16 *)src)[i * 4 + c] : ((const float *)src)[i * 4 + c];
+			if (c < 3)
+			{
+				float g = (v < 1.0f - v ? v : 1.0f - v) * 255.0f;
+				g = g > 0.0f ? (g < 1.0f ? g : 1.0f) : 0.0f;
+				v += (d * amp * (1.0f / 255.0f)) * g;
+			}
+			// the same NaN-safe clamp as mb_readback_convert
+			v = (v > 0.0f) ? ((v < 1.0f) ? v : 1.0f) : 0.0f;
+			out[i * 4 + (c == 0 ? 2 : (c == 2 ? 0 : c))] = (unsigned char)(v * 255.0f + 0.5f);
+		}
+	}
+	return true;
+}
+
 // Blit a texture sub-rectangle into CPU-visible memory. The one readback path,
 // shared by the probe and GL_ReadPixelsBGRA -- synchronous by design, because
 // both callers are verification instruments rather than frame work.
@@ -2749,6 +3016,11 @@ static qbool mb_readback(id<MTLTexture> tex, int x, int y, int width, int height
 	[mb_cb commit];
 	[mb_cb waitUntilCompleted];
 	mb_cb = nil;
+	// r_dither: the float screen's 8-bit readback is dithered exactly as the
+	// present is (REVIEW 0.5); every other texture, and the screen at 0, takes
+	// the old conversion byte for byte
+	if (tex == mb_screentex && vid.dither > 0.0f)
+		return mb_readback_convert_dither(fmt, [rb contents], x, y, width, height, vid.dither, out);
 	return mb_readback_convert(fmt, [rb contents], (size_t)width * (size_t)height, out);
 }
 

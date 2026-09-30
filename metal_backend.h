@@ -101,7 +101,9 @@ void Metal_Backend_Finish(void);
 
 /// Start a frame: make the persistent GL-layout screen texture the render
 /// target, creating or resizing it as needed. Called where the Phase 0
-/// CL_UpdateScreen door used to be.
+/// CL_UpdateScreen door used to be. Also commits, unwaited, any command buffer
+/// still open from BETWEEN frames (the loading screen's background copy, frames
+/// drawn hidden during a capture, a Host_Error abort), so no frame appends to it.
 void Metal_Backend_BeginFrame(int width, int height);
 
 /// Finish a frame: run the v-flip present pass into `drawable` (an opaque
@@ -115,6 +117,10 @@ void Metal_Backend_BeginFrame(int width, int height);
 /// the drawable and DOES present -- macOS stops granting headroom to a layer
 /// that has stopped putting frames on screen, so a non-presenting EDR probe
 /// would measure the state it destroyed.
+/// A NULL `drawable` means there was nowhere to present this frame (occluded or
+/// minimised window, display asleep, nextDrawable's timeout): the frame is still
+/// ended and committed, without a present, so no command buffer outlives its
+/// frame -- every exit leaves the backend with no open buffer.
 void Metal_Backend_EndFrame(void *drawable, int probeframe);
 
 /// METAL_FRAMEMS=2: time ONE region of the frame on the GPU. begin=1 closes the
@@ -293,10 +299,19 @@ qbool Metal_Backend_ReadPixels(int x, int y, int width, int height, unsigned cha
 /// fbo 0 at VID_Finish time today -- but Phase 8-5 points R_BlendView at a
 /// pooled intermediate, and an instrument whose pixel source moves with the
 /// last SetRenderTargets call is a silent coupling. GL-layout rows (row 0 at
-/// the bottom), BGRA8, clamped under an EDR frame. Refuses (returns false)
+/// the bottom), BGRA8, clamped under an EDR frame, and dithered while r_dither
+/// is on (REVIEW 0.5: the same hash the present pass uses, so an 8-bit capture
+/// is the picture an SDR display shows). Refuses (returns false)
 /// unless width/height equal the screen texture's own, which keeps the
 /// caller's buffer sizing honest.
 qbool Metal_Backend_ReadScreenBGRA(int width, int height, unsigned char *outpixels);
+
+/// True when the screen texture BeginFrame made this frame is RGBA16Float --
+/// EDR, or r_dither holding the frame float to the present (REVIEW 0.5). THE
+/// truth for "fbo 0 is float this frame", read off the texture itself, so the
+/// MetalFX output key and the post-AA target can never disagree with the
+/// destination they are handed.
+qbool Metal_Backend_ScreenIsFloat(void);
 
 /// Point the backend at a private scratch colour target and clear the shadow.
 /// Returns false with a console error if Metal is not up.
@@ -354,6 +369,7 @@ static inline void Metal_Backend_SetUniformFloats(int loc, const float *values, 
 static inline void Metal_Backend_SetUniformInt(int loc, int value) { (void)loc; (void)value; }
 static inline qbool Metal_Backend_ReadPixels(int x, int y, int width, int height, unsigned char *outpixels) { (void)x; (void)y; (void)width; (void)height; (void)outpixels; return false; }
 static inline qbool Metal_Backend_ReadScreenBGRA(int width, int height, unsigned char *outpixels) { (void)width; (void)height; (void)outpixels; return false; }
+static inline qbool Metal_Backend_ScreenIsFloat(void) { return false; }
 static inline qbool Metal_Backend_ProbeBegin(int width, int height) { (void)width; (void)height; return false; }
 static inline qbool Metal_Backend_ProbeEnd(unsigned char *outBGRA) { (void)outBGRA; return false; }
 

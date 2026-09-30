@@ -47,7 +47,10 @@
 #                     default windowed-borderless (the load-noise caveat applies
 #                     doubly there -- fullscreen is the quotable block)
 #   BENCH_ROUNDS      interleaved rounds (default 3 -> warmup + A B A B A B)
-#   BENCH_DUMPFRAMES  arm RT_METAL_DUMP at these playback frames per run
+#   BENCH_DUMPFRAMES  arm RT_METAL_DUMP at these playback frames per run. A frame number
+#                     is the timedemo's own count -- the "frame N" cl_showfps draws -- since
+#                     2026-09-24; numbers recorded before then are 6 too high (the old counter
+#                     took the loading screen's presents and the three pre-start frames).
 #                     (e.g. "1450,2800"); dumps land beside the results
 #   BENCH_OUT         results dir (default: a fresh mktemp -d, printed)
 #
@@ -55,7 +58,9 @@
 # accounting (cl_demo.c); the summary quotes total fps and the 1-sec minimum,
 # which is what the Phase 8 flip was judged on. Numbers taken under load are
 # not quotable as absolutes -- the harness prints uptime before and after so
-# the log carries the conditions.
+# the log carries the conditions. Since 2026-09-24 each benchmark line also
+# ends with the frame-time distribution ("| ft p50 ... >33ms N"), printed per
+# run; results.log keeps it whole.
 
 set -eu
 cd "$(dirname "$0")/.."
@@ -97,6 +102,11 @@ run_one() {
 		echo 'vid_vsync 0'
 		echo 'cl_maxfps 0'
 		echo 'cl_maxidlefps 0'
+		# r_dither 0 (REVIEW 0.5): a static white TPDF adds exactly the
+		# high-frequency and Nyquist energy the dump metrics measure (weave,
+		# sharpness, roll, flicker, ghost, lookmetrics), and this copies Seb's
+		# live config; an arm that wants it sets it in BENCH_A/BENCH_B
+		echo 'r_dither 0'
 		if [ "${BENCH_FULLSCREEN:-0}" = "1" ]; then
 			echo 'vid_width 1920'
 			echo 'vid_height 1080'
@@ -132,7 +142,10 @@ run_one() {
 	# result <frames> frames <secs> seconds <fps> fps, one-second fps min/avg/max: <mn> <av> <mx>
 	FPS=$(printf '%s' "$LINE"  | sed 's/.*seconds \([0-9.]*\) fps.*/\1/')
 	MINS=$(printf '%s' "$LINE" | sed 's/.*min\/avg\/max: \([0-9.]*\) \([0-9.]*\) \([0-9.]*\).*/\1 \2 \3/')
-	echo "  $5 ($2): $FPS fps   1-sec min/avg/max: $MINS"
+	# the frame-time field (2026-09-24); empty from a binary before it, and the
+	# line then reads exactly as it did
+	FT=$(printf '%s' "$LINE" | sed -n 's/.*| ft \(.*\)$/\1/p')
+	echo "  $5 ($2): $FPS fps   1-sec min/avg/max: $MINS${FT:+   ft $FT}"
 	rm -rf "$SB"
 }
 

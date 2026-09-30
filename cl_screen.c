@@ -29,15 +29,19 @@ extern cvar_t rt_metal_bluenoise;  // blue-noise kernel jitter (the weave fix); 
 extern cvar_t rt_metal_lightcores; // flame models become a separate emissive instance
 extern cvar_t rt_metal_lavaemissive; // lava sheets become a separate emissive instance (closes the see-through-lighting leak)
 extern cvar_t rt_metal_lavalights;   // lava lakes feed warm lights into the RT light list
+extern cvar_t rt_metal_fixturelights;         // VKRT slice 3: lamp fixtures feed lights at their own faces
+extern cvar_t rt_metal_fixturelights_radius;
 extern cvar_t rt_metal_skyopen;      // sky brushes become the OPEN SKY instance (primary rays reach the sentinel)
 extern cvar_t rt_metal_liquidemissive; // opaque water/slime become their own EMISSIVE instance
 extern cvar_t rt_metal_liquids_rt;     // SEPTEMBER2 C2: blended water/slime become their own instance for the liquid term + reflection
 extern cvar_t rt_metal_liquids_reflect;
+extern cvar_t rt_metal_liquids_reflect_under;   // the pair's reflection gain while the eye is submerged
 extern cvar_t r_wateralpha_force;    // the transparent-water enabling set (gl_rmain.c owns these two;
 extern cvar_t r_water;               //  render.h already externs r_wateralpha / r_novis / r_trippy)
 extern cvar_t rt_metal_softness;
 extern cvar_t rt_metal_darkness;
 extern cvar_t rt_metal_culldist;
+extern cvar_t rt_metal_lightrank;   // rank the RT light upload when more than the kernels' 256 are in range
 extern cvar_t rt_metal_history;
 extern cvar_t rt_metal_color;      // strength of the dynamic-light colored brighten
 extern cvar_t rt_metal_walllight;  // full RT wall lighting (render fullbright, RT does all lighting)
@@ -98,15 +102,18 @@ extern cvar_t rt_metal_fog_liquidlight; // BEAUTY B2: light in the water
 extern cvar_t rt_metal_contact; // BEAUTY B3: contact-hardened shadows
 extern cvar_t rt_metal_shadowlights;      // 2026-09-19: brightest lights shadow-tested per pixel
 extern cvar_t rt_metal_shadowlights_rays;
+extern cvar_t rt_metal_shadowlights_smooth;
 extern cvar_t r_skylightning, r_skylightning_period, r_skylightning_hold, r_skylightning_fog; // BEAUTY C1: lightning in the sky
 extern cvar_t rt_metal_viewmodel;         // the view weapon's own RT-matched lighting
 extern cvar_t rt_metal_viewmodel_shadows;
 extern cvar_t rt_metal_viewmodel_smooth;
+extern cvar_t rt_metal_jitter;             // the trace follows the raster's TAA jitter (REVIEW 0.6)
 // The view weapon's light is evaluated over a SEPARATE, much smaller list than the
 // sidecar's 2048: it is one point, so anything the cull leaves in range of the eye
 // is already far more than the eye can tell apart, and this keeps the per-frame
 // scratch off the sidecar's.
 #define RT_VML_MAXLIGHTS    256
+#define RT_UPLOAD_MAXLIGHTS 2048  // the sidecar upload's own ceiling; the rank scratch is sized to it
 #define RT_VML_MAXSHADOW    16    // ceiling on rt_metal_viewmodel_shadows
 // How much of the term is delivered as flat ambient rather than through N.L. Too
 // low and the facets turned away from the light read black (the gun looks
@@ -1988,6 +1995,93 @@ static int RT_GatherDynamicLights(float *dst, int maxlights, const float *viewor
 
 /*
 ================
+RT_RankLightsForKernel (REVIEW 0.7)
+
+The kernels hold RT_KERNEL_MAXLIGHTS (256) lights and see nothing past them: the
+cap is GLOBAL on upload order (rt_metal.h says why), and the upload is dynamic
+lights, then the map's static lights in entity-lump order, then lava lights. On a
+map with more lights in range than that -- much of Arcane Dimensions, and stock
+e3m4, e1m8 and e3m6 in places -- the cut fell at a fixed index in MAP order, so it
+could drop a lamp beside the player for a faint one across the level, and a muzzle
+flash (one more dynamic light) could shift which light sat at the boundary.
+
+This keeps, among the STATIC lights only, the `room` whose reach looks largest from
+the eye: max(r,g,b) x r^2 / max(d^2, r^2), i.e. brightness times the solid angle of
+the light's sphere, saturating at full brightness once the eye is inside it. It
+deliberately ignores view direction -- the set does not change as you turn, and the
+fog, bounce and reflection rays see behind the eye anyway. (1-d/r)^2 at the eye
+cannot rank: it is zero for every light whose sphere does not reach the eye, which
+is nearly all of them.
+
+Order of the result: the nd dynamic lights untouched; the kept statics in their
+ORIGINAL relative order; then the lava lights in their original order (they keep
+the lava arc's truncate-first place); then the dropped statics. So wherever the
+statics fit (ns <= room) the result IS the input, and wherever the kept set equals
+map order's first `room`, the kernels' 256 are byte-identical to the old upload.
+Note R_Shadow_GetWorldLightPositions itself stops at the upload ceiling in map
+order, before this runs; unreachable at the default culldist.
+
+Returns the number of statics kept.
+================
+*/
+typedef struct rt_lightrank_s { float score; int index; } rt_lightrank_t;
+static int RT_LightRank_Compare(const void *pa, const void *pb)
+{
+	const rt_lightrank_t *a = (const rt_lightrank_t *)pa;
+	const rt_lightrank_t *b = (const rt_lightrank_t *)pb;
+	if (a->score != b->score)
+		return a->score > b->score ? -1 : 1;
+	return a->index - b->index;	// a total order: ties in map order
+}
+static int RT_RankLightsForKernel(const float *src, float *dst, int nl, int nd, int ns, const float *eye)
+{
+	static rt_lightrank_t rank[RT_UPLOAD_MAXLIGHTS];
+	static unsigned char keep[RT_UPLOAD_MAXLIGHTS];
+	int room = RT_KERNEL_MAXLIGHTS - nd;
+	int i, j, n, kept, out;
+	const float *L;
+	float dx, dy, dz, d2, r2, m, score;
+
+	if (room < 0)
+		room = 0;
+	n = 0;
+	for (i = nd; i < nd + ns; i++)
+	{
+		L = src + i * RT_LIGHT_STRIDE;
+		dx = L[0] - eye[0]; dy = L[1] - eye[1]; dz = L[2] - eye[2];
+		d2 = dx*dx + dy*dy + dz*dz;
+		r2 = L[3] * L[3];
+		m = L[4];
+		if (L[5] > m) m = L[5];
+		if (L[6] > m) m = L[6];
+		score = m * ((d2 <= r2) ? 1.0f : r2 / d2);
+		if (!(score > 0.0f))	// also catches a NaN, which would make the order non-total
+			score = 0.0f;
+		rank[n].score = score;
+		rank[n].index = i;
+		keep[i] = 0;
+		n++;
+	}
+	qsort(rank, (size_t)n, sizeof(rank[0]), RT_LightRank_Compare);
+	kept = n < room ? n : room;
+	for (j = 0; j < kept; j++)
+		keep[rank[j].index] = 1;
+
+	memcpy(dst, src, sizeof(float) * RT_LIGHT_STRIDE * (size_t)nd);
+	out = nd;
+	for (i = nd; i < nd + ns; i++)	// the kept statics, original order
+		if (keep[i])
+			memcpy(dst + (out++) * RT_LIGHT_STRIDE, src + i * RT_LIGHT_STRIDE, sizeof(float) * RT_LIGHT_STRIDE);
+	for (i = nd + ns; i < nl; i++)	// lava, original order
+		memcpy(dst + (out++) * RT_LIGHT_STRIDE, src + i * RT_LIGHT_STRIDE, sizeof(float) * RT_LIGHT_STRIDE);
+	for (i = nd; i < nd + ns; i++)	// the dropped statics, after everything the kernels can see
+		if (!keep[i])
+			memcpy(dst + (out++) * RT_LIGHT_STRIDE, src + i * RT_LIGHT_STRIDE, sizeof(float) * RT_LIGHT_STRIDE);
+	return kept;
+}
+
+/*
+================
 RT_ViewmodelLight
 
 Light the VIEW WEAPON from the same light list the sidecar traces.
@@ -2369,6 +2463,84 @@ static int    rt_world_lastliquidmode = -1;
 #define RT_LAVA_MAXLIGHTS 64
 static float  rt_lava_lights[RT_LAVA_MAXLIGHTS * 7];   // xyz, radius, rgb
 static int    rt_lava_numlights;
+// fixture lights (rt_metal_fixturelights, VKRT slice 3): one light per 128-unit
+// cell of world faces whose texture is in the table below, gathered in the same
+// walk. Storage is xyz, rgb, then the mean face NORMAL -- the light sits 8
+// units off the face along it and the kernels' cone (slots 8-12 of the upload)
+// is a hemisphere about it, so a ceiling lamp lights its ceiling and the fog
+// under it and never the room above. The radius is the cvar's, read at upload.
+// Enumeration is unconditional; the cvar gates consumption at upload time.
+// 512 since 2026-09-29: the cell key took the face's DIRECTION (see the gather),
+// which roughly doubles the count on a map whose strips wrap their trim (e3m4
+// 123 -> the largest in id1); the kernels' own cap and the rank are downstream.
+#define RT_FIXTURE_MAXLIGHTS 512
+static float  rt_fixture_lights[RT_FIXTURE_MAXLIGHTS * 9];   // xyz, rgb, normal
+static int    rt_fixture_numlights;
+// vkquake-rt's POLY_LIGHT table for the base set (its texture_custom_info.txt,
+// the survey's transcription), normalised so the brightest channel is 1, plus
+// the slipgate's own strips (sliplite: red) and the two ceiling lamps start.bsp
+// and e1m1 use that its list leaves out (tlight02/07: the warm sodium of their
+// own fullbright texels). Names compare case-insensitively against the
+// surface's texture name; an animated frame (+0basebtn) matches only itself.
+typedef struct rt_fixture_s { const char *name; float r, g, b; float strength; } rt_fixture_t;   // strength: the entry's own level under the cvar (lamps 1, trim strips 0.5)
+static const rt_fixture_t rt_fixture_table[] = {
+	// the base set's lamps: colour = the texture's own brightest twentieth
+	// (a census of id1's BSPs, 2026-09-28), normalised to the max channel
+	{ "tlight01",  1.000f, 0.902f, 0.420f, 1.0f },   // yellow ceiling lamp (e1m1 e2m1 e3m1 e4m1)
+	{ "tlight02",  1.000f, 0.992f, 0.933f, 1.0f },   // the white lamp
+	{ "tlight03",  0.498f, 0.749f, 1.000f, 1.0f },   // blue lamp (e2m1 e3m1)
+	{ "tlight05",  0.685f, 0.685f, 1.000f, 1.0f },   // lavender (e4m1)
+	{ "tlight07",  1.000f, 0.977f, 0.475f, 1.0f },   // the sodium lamp
+	{ "tlight09",  1.000f, 0.870f, 0.068f, 1.0f },   // amber (e4m1)
+	{ "tlight10",  1.000f, 0.953f, 0.106f, 1.0f },   // yellow strip (e1m1 e2m1 e4m1)
+	{ "tlight11",  1.000f, 1.000f, 1.000f, 1.0f },   // white (e1m1)
+	{ "ceil1_1",   0.671f, 0.906f, 1.000f, 1.0f },   // blue-white ceiling panel
+	{ "sfloor4_4", 0.843f, 1.000f, 1.000f, 1.0f },   // the lit floor panel (e3m1)
+	// the medieval sets' wall and ceiling lamps (no fullbright texels; vkquake
+	// lights them by name too): the yellow family and the stone-grey family
+	{ "light1_1",  1.000f, 0.948f, 0.104f, 1.0f },
+	{ "light1_2",  1.000f, 0.944f, 0.100f, 1.0f },
+	{ "light1_3",  1.000f, 0.953f, 0.106f, 1.0f },
+	{ "light1_4",  0.689f, 0.689f, 1.000f, 1.0f },   // the blue one
+	{ "light1_5",  1.000f, 0.944f, 0.101f, 1.0f },
+	{ "light1_7",  1.000f, 0.953f, 0.106f, 1.0f },
+	{ "light1_8",  1.000f, 0.943f, 0.101f, 1.0f },
+	{ "light3_3",  1.000f, 0.873f, 0.817f, 1.0f },
+	{ "light3_5",  1.000f, 0.890f, 0.854f, 1.0f },
+	{ "light3_6",  1.000f, 0.882f, 0.823f, 1.0f },
+	{ "light3_7",  1.000f, 0.882f, 0.823f, 1.0f },
+	{ "light3_8",  1.000f, 0.890f, 0.854f, 1.0f },
+	// the base's red controls and the slipgate's strips
+	{ "+0basebtn", 1.000f, 0.200f, 0.200f, 1.0f },   // vkquake's ff3333
+	{ "+abasebtn", 1.000f, 0.902f, 0.710f, 1.0f },   // vkquake's ffe6b5
+	{ "basebutn3", 1.000f, 0.120f, 0.060f, 1.0f },
+	{ "switch_1",  1.000f, 0.120f, 0.060f, 1.0f },
+	{ "sliplite",  1.000f, 0.120f, 0.060f, 1.0f },
+	// "EVERY LAMP" (2026-09-28 late, Seb: strips and exits at half strength, no
+	// runes): the rest of id1's fullbright world art. Several episode 1 and 3
+	// medieval maps had NO fixture light at all -- their only fullbright texture
+	// is the red strip set into the metal trim -- and at full strength a red
+	// strip down every corridor owns the walls (e1m1 at strength 2), hence 0.5.
+	// Colour = the mean of the texture's fullbright texels, normalised.
+	// NOT here, deliberately: rune2_1..5 and rune_a (decoration; a red pool under
+	// every rune), the +Nslip panels (sliplite beside them lights the gate),
+	// raven and metal5_8 (one map each), the b_* item boxes (models, not world).
+	{ "metal6_3",  1.000f, 0.000f, 0.000f, 0.5f },   // the red trim strips (e1m5 e1m6 e1m8, e3m2-e3m5, e3m7)
+	{ "z_exit",    1.000f, 0.000f, 0.000f, 0.5f },   // the exit sign
+	{ "tech06_2",  1.000f, 0.000f, 0.000f, 0.5f },   // base panel (dm3 e2m1)
+	{ "key03_1",   0.549f, 0.796f, 1.000f, 0.5f },   // the silver key door's panel
+	{ "key03_2",   1.000f, 0.981f, 0.314f, 0.5f },   // the gold key door's panel
+};
+static int RT_FixtureIndex(const char *texname)
+{
+	size_t i;
+	if (!texname || !texname[0])
+		return -1;
+	for (i = 0; i < sizeof(rt_fixture_table) / sizeof(rt_fixture_table[0]); i++)
+		if (!strcasecmp(texname, rt_fixture_table[i].name))
+			return (int)i;
+	return -1;
+}
 static const void *rt_world_lastmodel;
 static const void *rt_world_lastverts;
 static int    rt_world_lastnumtris;
@@ -2424,6 +2596,10 @@ static void RT_BuildWorldGeometry(const model_t *model)
 	int lcellx[RT_LAVA_MAXLIGHTS], lcelly[RT_LAVA_MAXLIGHTS], lcount[RT_LAVA_MAXLIGHTS];
 	float lsumx[RT_LAVA_MAXLIGHTS], lsumy[RT_LAVA_MAXLIGHTS], lmaxz[RT_LAVA_MAXLIGHTS];
 	int nlcells = 0, ltruncated = 0, i;
+	// fixture-light cells: (table index, 128-unit xyz cell) -> summed centre, normal, count
+	static int fidx[RT_FIXTURE_MAXLIGHTS], fcx[RT_FIXTURE_MAXLIGHTS], fcy[RT_FIXTURE_MAXLIGHTS], fcz[RT_FIXTURE_MAXLIGHTS], fcount[RT_FIXTURE_MAXLIGHTS], fdir[RT_FIXTURE_MAXLIGHTS];
+	static float fsum[RT_FIXTURE_MAXLIGHTS * 3], fnrm[RT_FIXTURE_MAXLIGHTS * 3], ffirst[RT_FIXTURE_MAXLIGHTS * 3];
+	int nfcells = 0, ftruncated = 0, nfout = 0, nfdropped = 0;
 	int mapchanged = !(model == rt_world_lastmodel
 	 && model->surfmesh.data_vertex3f == rt_world_lastverts
 	 && model->surfmesh.num_vertices == rt_world_lastnumverts
@@ -2470,6 +2646,60 @@ static void RT_BuildWorldGeometry(const model_t *model)
 		const msurface_t *surf = model->data_surfaces + model->modelsurfaces_sorted[s];
 		const int *e;
 		int t;
+		// fixture lights (rt_metal_fixturelights): a matching face's centre and
+		// its mesh normal go into a 128-unit cell keyed on the table entry, so
+		// a lamp panel of a dozen faces is one light and two lamps in one room
+		// are two. Independent of everything below: the face still enters the
+		// BLAS as the ordinary wall it is.
+		if (surf->texture && surf->num_triangles > 0)
+		{
+			int fi = RT_FixtureIndex(surf->texture->name);
+			if (fi >= 0)
+			{
+				float cx = (surf->mins[0] + surf->maxs[0]) * 0.5f;
+				float cy = (surf->mins[1] + surf->maxs[1]) * 0.5f;
+				float cz = (surf->mins[2] + surf->maxs[2]) * 0.5f;
+				int gx = (int)floor(cx / 128.0f), gy = (int)floor(cy / 128.0f), gz = (int)floor(cz / 128.0f), c;
+				const float *nrm = model->surfmesh.data_normal3f ? model->surfmesh.data_normal3f + surf->num_firstvertex * 3 : NULL;
+				// THE FACE'S DIRECTION IS PART OF THE KEY (2026-09-29, Seb's "stray hard
+				// spots in E3M3 at the exit"). A strip that wraps its trim, or a lamp
+				// box lit on two sides, put faces pointing several ways into ONE cell:
+				// the mean centre then lay INSIDE the brush and the mean normal was a
+				// skewed stub (e3m3's exit: four cells at |mean n| 0.28-0.71, 15 of the
+				// map's 50 mixed; one light3_7 lamp at exactly 0, an omni inside solid),
+				// and a light inside a wall reaches the far side of it as a hard disc
+				// wherever the shadow test does not cover it. Each direction is its own
+				// light now, off its own face: five steps a component, so the axes and
+				// the 45-degree bevels each get a code.
+				int dir = nrm ? ((int)floor(nrm[0] * 2.0f + 0.5f) + 2) * 25 + ((int)floor(nrm[1] * 2.0f + 0.5f) + 2) * 5 + ((int)floor(nrm[2] * 2.0f + 0.5f) + 2) : 0;
+				for (c = 0; c < nfcells; c++)
+					if (fidx[c] == fi && fcx[c] == gx && fcy[c] == gy && fcz[c] == gz && fdir[c] == dir)
+						break;
+				if (c == nfcells)
+				{
+					if (nfcells < RT_FIXTURE_MAXLIGHTS)
+					{
+						fidx[c] = fi; fcx[c] = gx; fcy[c] = gy; fcz[c] = gz; fdir[c] = dir;
+						fsum[c*3] = fsum[c*3+1] = fsum[c*3+2] = 0.0f;
+						fnrm[c*3] = fnrm[c*3+1] = fnrm[c*3+2] = 0.0f;
+						ffirst[c*3] = cx; ffirst[c*3+1] = cy; ffirst[c*3+2] = cz;   // the cell's first face, the fallback position
+						fcount[c] = 0;
+						nfcells++;
+					}
+					else
+					{
+						ftruncated = 1;
+						c = -1;
+					}
+				}
+				if (c >= 0)
+				{
+					fsum[c*3] += cx; fsum[c*3+1] += cy; fsum[c*3+2] += cz;
+					if (nrm) { fnrm[c*3] += nrm[0]; fnrm[c*3+1] += nrm[1]; fnrm[c*3+2] += nrm[2]; }
+					fcount[c]++;
+				}
+			}
+		}
 		// lava first: it carries NOSHADOW (so the filter below would drop it) but
 		// with rt_metal_lavaemissive it becomes a separate emissive instance --
 		// primary rays stop at the sheet instead of shading the sunken geometry.
@@ -2634,6 +2864,54 @@ static void RT_BuildWorldGeometry(const model_t *model)
 		Con_DPrintf("RT: lava light grid truncated at %d cells\n", RT_LAVA_MAXLIGHTS);
 	if (nlcells)
 		Con_DPrintf("RT: %d lava lights (256u grid)\n", nlcells);
+	// emit the fixture lights: one per cell, 8 units off the face along the
+	// mean normal (a face with no normal -- none on a Q1BSP -- stays on the
+	// face and lights as an omni), the table's colour. Capped with a report.
+	// A LIGHT INSIDE SOLID IS WORSE THAN NO LIGHT (2026-09-29): it shines through
+	// the rock as a hard disc wherever the shadow test does not reach it. The
+	// direction key above removes the mixed cells; what is left is a lamp in a
+	// recess shallower than the offset, or two panels in one cell with a wall
+	// between them, where the mean centre or the 8-unit step lands in the wall
+	// (measured offline over id1: 69 of 893 lights inside solid before the key,
+	// 40 of 1265 after it). So each position is TESTED: the mean centre 8 then 3
+	// units off the face, then the cell's first face 8 then 3 units off; the
+	// first in open space wins, and a cell with none is dropped and counted.
+	for (i = 0; i < nfcells; i++)
+	{
+		float *F = rt_fixture_lights + nfout * 9;
+		float nx = fnrm[i*3], ny = fnrm[i*3+1], nz = fnrm[i*3+2];
+		float nl2 = nx*nx + ny*ny + nz*nz, inv = nl2 > 1e-6f ? 1.0f / sqrt(nl2) : 0.0f;
+		float mean[3];
+		int t, found = 0;
+		nx *= inv; ny *= inv; nz *= inv;
+		mean[0] = fsum[i*3] / (float)fcount[i]; mean[1] = fsum[i*3+1] / (float)fcount[i]; mean[2] = fsum[i*3+2] / (float)fcount[i];
+		for (t = 0; t < 4 && !found; t++)
+		{
+			const float *base = (t < 2) ? mean : ffirst + i * 3;
+			float step = (t & 1) ? 3.0f : 8.0f;
+			vec3_t pos;
+			pos[0] = base[0] + nx * step; pos[1] = base[1] + ny * step; pos[2] = base[2] + nz * step;
+			if (model->PointSuperContents && (model->PointSuperContents((model_t *)model, 0, pos) & (SUPERCONTENTS_SOLID | SUPERCONTENTS_SKY)))
+				continue;
+			F[0] = pos[0]; F[1] = pos[1]; F[2] = pos[2];
+			found = 1;
+		}
+		if (!found)
+		{
+			nfdropped++;
+			continue;
+		}
+		F[3] = rt_fixture_table[fidx[i]].r * rt_fixture_table[fidx[i]].strength;   // the entry's own level; the cvar is the gain over it
+		F[4] = rt_fixture_table[fidx[i]].g * rt_fixture_table[fidx[i]].strength;
+		F[5] = rt_fixture_table[fidx[i]].b * rt_fixture_table[fidx[i]].strength;
+		F[6] = nx; F[7] = ny; F[8] = nz;
+		nfout++;
+	}
+	rt_fixture_numlights = nfout;
+	if (ftruncated)
+		Con_DPrintf("RT: fixture light grid truncated at %d cells\n", RT_FIXTURE_MAXLIGHTS);
+	if (nfcells)
+		Con_DPrintf("RT: %d fixture lights gathered (128u cells by direction; %d dropped inside solid; rt_metal_fixturelights %.2f)\n", nfout, nfdropped, rt_metal_fixturelights.value);
 	rt_world_lastmodel = model;
 	rt_world_lastverts = model->surfmesh.data_vertex3f;
 	rt_world_lastnumverts = model->surfmesh.num_vertices;
@@ -2868,12 +3146,14 @@ void RT_SceneComposite(int viewfbo, rtexture_t *viewdepthtexture, rtexture_t *vi
 	// into lightmaps, so their moving RT shadows are the real payoff) PLUS the
 	// map's STATIC worldlights (already baked, so RT mostly duplicates them). The
 	// two lists are disjoint. Dynamic lights go FIRST so that if a very dense map
-	// overflows the kernel's 256-light cache, the high-value moving lights survive
-	// the truncation rather than the static ones.
+	// overflows the kernels' 256-light cap, the high-value moving lights survive
+	// the truncation rather than the static ones; under the cap the statics are
+	// then RANKED (RT_RankLightsForKernel, rt_metal_lightrank) rather than cut in
+	// map order.
 	{
-		static float rt_lightbuf[2048 * RT_LIGHT_STRIDE];
-		int nd = RT_GatherDynamicLights(rt_lightbuf, 2048, rtorg, rt_metal_culldist.value);
-		int ns = R_Shadow_GetWorldLightPositions(rt_lightbuf + nd * RT_LIGHT_STRIDE, 2048 - nd, rtorg, rt_metal_culldist.value);
+		static float rt_lightbuf[RT_UPLOAD_MAXLIGHTS * RT_LIGHT_STRIDE];
+		int nd = RT_GatherDynamicLights(rt_lightbuf, RT_UPLOAD_MAXLIGHTS, rtorg, rt_metal_culldist.value);
+		int ns = R_Shadow_GetWorldLightPositions(rt_lightbuf + nd * RT_LIGHT_STRIDE, RT_UPLOAD_MAXLIGHTS - nd, rtorg, rt_metal_culldist.value);
 		int nl = nd + ns;
 		// M5 per-map level normalisation. Under wall lighting the map's own
 		// light entities ARE the scene's lighting, delivered with a fixed
@@ -2907,15 +3187,53 @@ void RT_SceneComposite(int viewfbo, rtexture_t *viewdepthtexture, rtexture_t *vi
 				}
 			}
 		}
+		// fixture lights (rt_metal_fixturelights, VKRT slice 3): appended to the
+		// STATIC pool -- after the pack normaliser (they are a per-fixture look,
+		// not the map's budget) and BEFORE the lava, and counted into ns, so on
+		// a map over the kernels' cap the rank scores them like any map light
+		// rather than cutting them first. Slots 8-12 make each one a HEMISPHERE
+		// about its face normal: outer cosine 0 (90 degrees), the shoulder to
+		// 0.35, so the light falls to nothing along the face and nothing at all
+		// behind it; a light with no normal is omni like the lava's.
+		if (rt_metal_fixturelights.value > 0.0f && rt_fixture_numlights > 0)
+		{
+			float s = rt_metal_fixturelights.value;
+			float radius = max(16.0f, rt_metal_fixturelights_radius.value);
+			int i;
+			for (i = 0; i < rt_fixture_numlights && nl < RT_UPLOAD_MAXLIGHTS; i++)
+			{
+				const float *F = rt_fixture_lights + i * 9;
+				float dx = F[0] - rtorg[0], dy = F[1] - rtorg[1], dz = F[2] - rtorg[2];
+				float reach = radius + rt_metal_culldist.value;
+				float *D = rt_lightbuf + nl * RT_LIGHT_STRIDE;
+				int hasnrm = (F[6]*F[6] + F[7]*F[7] + F[8]*F[8]) > 0.5f;
+				if (dx*dx + dy*dy + dz*dz > reach * reach)
+					continue;
+				// every slot written (the lava site's rule: the buffer is never cleared)
+				D[0] = F[0]; D[1] = F[1]; D[2] = F[2];
+				D[3] = radius;
+				D[4] = F[3] * s; D[5] = F[4] * s; D[6] = F[5] * s;
+				D[7] = 1.0f;                                    // fogs like any other light
+				D[8]  = hasnrm ? F[6] : 0.0f;                   // hemisphere about the face
+				D[9]  = hasnrm ? F[7] : 0.0f;
+				D[10] = hasnrm ? F[8] : 0.0f;
+				D[11] = 0.0f;                                   // outer cosine: 90 degrees
+				D[12] = hasnrm ? 0.35f : 0.0f;                  // the shoulder's inner cosine
+				D[13] = 0.0f;                                   // no filament
+				nl++;
+				ns++;
+			}
+		}
 		// lava lights (rt_metal_lavalights): constant warm emitters gathered at
-		// map load, appended LAST so they truncate first under pressure. The
+		// map load, appended LAST so they truncate first under pressure (the
+		// rank keeps that: it orders the statics only, lava after them). The
 		// cvar scales the colour; lava is not in the shadow-ray mask, so these
 		// are never occluded by their own sheet.
 		if (rt_metal_lavalights.value > 0.0f && rt_lava_numlights > 0)
 		{
 			float s = rt_metal_lavalights.value;
 			int i;
-			for (i = 0; i < rt_lava_numlights && nl < 2048; i++)
+			for (i = 0; i < rt_lava_numlights && nl < RT_UPLOAD_MAXLIGHTS; i++)
 			{
 				const float *L = rt_lava_lights + i * 7;
 				float dx = L[0] - rtorg[0], dy = L[1] - rtorg[1], dz = L[2] - rtorg[2];
@@ -2945,7 +3263,37 @@ void RT_SceneComposite(int viewfbo, rtexture_t *viewdepthtexture, rtexture_t *vi
 				nl++;
 			}
 		}
-		RT_Metal_SetLights(rt_lightbuf, nl, nd);   // first nd are dynamic (colored brighten)
+		// THE KERNELS' CAP (REVIEW 0.7): only the first RT_KERNEL_MAXLIGHTS reach
+		// any kernel. Under it nothing moves -- this branch is not entered, and
+		// the upload is byte-for-byte what it was. Over it, rank the statics (see
+		// RT_RankLightsForKernel) unless rt_metal_lightrank is 0, and say so ONCE
+		// per map: the count moves with every muzzle flash, so a change-only line
+		// would be a per-frame print (the console-ink rule).
+		if (nl > RT_KERNEL_MAXLIGHTS)
+		{
+			static float rt_rankbuf[RT_UPLOAD_MAXLIGHTS * RT_LIGHT_STRIDE];
+			static unsigned long rt_lightcap_reportgen;
+			int kept = -1;
+			if (rt_metal_lightrank.integer)
+			{
+				kept = RT_RankLightsForKernel(rt_lightbuf, rt_rankbuf, nl, nd, ns, rtorg);
+				RT_Metal_SetLights(rt_rankbuf, nl, nd);   // first nd are dynamic (colored brighten)
+			}
+			else
+				RT_Metal_SetLights(rt_lightbuf, nl, nd);
+			if (rt_lightcap_reportgen != rt_world_gen)
+			{
+				rt_lightcap_reportgen = rt_world_gen;
+				if (kept >= 0)
+					Con_DPrintf("RT lights: %d in range, the kernels hold %d -- ranked: %d dynamic first, then the %d map lights whose reach looks largest from here; %d left out (rt_metal_lightrank 1; once per map)\n",
+					            nl, RT_KERNEL_MAXLIGHTS, nd, kept, nl - RT_KERNEL_MAXLIGHTS);
+				else
+					Con_DPrintf("RT lights: %d in range, the kernels hold %d -- map order: the first %d reach the screen and %d are ignored whatever they light (rt_metal_lightrank 0; once per map)\n",
+					            nl, RT_KERNEL_MAXLIGHTS, RT_KERNEL_MAXLIGHTS, nl - RT_KERNEL_MAXLIGHTS);
+			}
+		}
+		else
+			RT_Metal_SetLights(rt_lightbuf, nl, nd);   // first nd are dynamic (colored brighten)
 	}
 	// gather this frame's dynamic shadow casters (monsters/items/doors) so they
 	// cast RT shadows too (the player's own gun+body are excluded in the gather);
@@ -2962,6 +3310,7 @@ void RT_SceneComposite(int viewfbo, rtexture_t *viewdepthtexture, rtexture_t *vi
 	RT_Metal_SetSameFrame(rt_metal_sameframe.integer);
 	RT_Metal_SetReprojectDepth(rt_metal_reproject_depth.integer);
 	RT_Metal_SetBlueNoise(rt_metal_bluenoise.integer);
+	RT_Metal_SetShadowSmooth(rt_metal_shadowlights_smooth.integer);
 	RT_Metal_SetTuning(rt_metal_samples.integer, rt_metal_softness.value, rt_metal_darkness.value, rt_metal_history.value, rt_metal_color.value, rt_metal_walllight.value, rt_metal_ambient.value, rt_metal_scale.value, rt_metal_reproject.integer);
 	RT_Metal_SetShaftTuning(rt_metal_shafts.integer, rt_metal_shafts_samples.integer, rt_metal_shafts_scale.value, rt_metal_shafts_history.value, rt_metal_shafts_dist.value, rt_metal_shafts_residual.value);
 	{
@@ -2993,7 +3342,17 @@ void RT_SceneComposite(int viewfbo, rtexture_t *viewdepthtexture, rtexture_t *vi
 	RT_Metal_SetRefit(rt_metal_refit.integer);
 	RT_Metal_SetASSkip(rt_metal_as_skipstatic.integer);
 	// SEPTEMBER2 C2: the liquid pair needs the surface consumer live (rt_metal_liquids > 0) and the wall-lighting arm
-	RT_Metal_SetLiquidRT(rt_metal_liquids_rt.integer && rt_metal_liquids.value > 0.0f && rt_metal_walllight.value > 0.0f, rt_metal_liquids_reflect.value);
+	// 2026-09-29: while the eye is inside a liquid the gain is scaled by
+	// rt_metal_liquids_reflect_under -- from below, the underside's mirror is the
+	// pair alone (the screen-space reflection stands down under water). The
+	// setter's console line keys on the enable only, so crossing the waterline
+	// prints nothing.
+	{
+		float liqreflect = rt_metal_liquids_reflect.value;
+		if (cl.worldmodel && (CL_PointSuperContents(r_refdef.view.origin) & SUPERCONTENTS_LIQUIDSMASK))
+			liqreflect *= bound(0.0f, rt_metal_liquids_reflect_under.value, 1.0f);
+		RT_Metal_SetLiquidRT(rt_metal_liquids_rt.integer && rt_metal_liquids.value > 0.0f && rt_metal_walllight.value > 0.0f, liqreflect);
+	}
 	// SEPTEMBER2 D: the sky light -- the map's ericw sun keys, each overridable by a cvar.
 	// ericw's mangle is "yaw pitch roll" with NEGATIVE pitch shining DOWN (the light's
 	// travel direction, mathematical pitch, not Quake's inverted one); the kernel wants
@@ -3031,6 +3390,13 @@ void RT_SceneComposite(int viewfbo, rtexture_t *viewdepthtexture, rtexture_t *vi
 	}
 	RT_Metal_SetFogAdaptiveStride(rt_metal_fog_stride_adaptive.integer);
 	RT_Metal_SetCamera(rtorg, rtfwd, rtright, rtup, r_refdef.view.frustum_x, r_refdef.view.frustum_y);
+	// REVIEW 0.6: the raster's TAA jitter as the ray-side offset (the sign is
+	// derived beside R_SetupView); 0/0 when the raster is not jittered
+	{
+		float rj[2];
+		R_TAA_RayJitter(rj);
+		RT_Metal_SetJitter(rt_metal_jitter.integer, rj[0], rj[1]);
+	}
 	// Trace at the 3D VIEWPORT resolution and tell the composite where that viewport
 	// sits in the bound framebuffer (viewport.x/y are already GL bottom-left, with the
 	// window-vs-FBO y flip applied by R_SetupView). The previous hook always traced at
@@ -3171,10 +3537,23 @@ void CL_SkyLightning_Update(void) { }
 
 static void SCR_DrawScreen (void)
 {
+	float hudscale;	// HUD BRIGHTNESS: this frame's in-game 2D scale, exactly 1.0f at the default
+
 	Draw_Frame();
 	DrawQ_Start();
 	R_Mesh_Start();
 	R_UpdateVariables();
+
+	// HUD BRIGHTNESS (r_hud_brightness, REVIEW 0.4). The in-game 2D layer --
+	// whatever a CSQC mod queues inside CSQC_UpdateView below, the notify and chat
+	// text, the status bar and crosshair, the centre print -- flushes at this
+	// scale, so it is set BEFORE the view renders. The menu, video, loading screen
+	// and console go back to 1 further down. A loading frame draws nothing in-game
+	// (every in-game call is gated !scr_loading), so it keeps 1 throughout and is
+	// exactly today's frame at any setting. At the default every switch compares
+	// equal and returns: no flush, no batch split, the old call stream to the call.
+	hudscale = scr_loading ? 1.0f : DrawQ_HUDBrightness();
+	DrawQ_SetUIColorScale(hudscale);
 
 	// Quake uses clockwise winding, so these are swapped
 	r_refdef.view.cullface_front = GL_BACK;
@@ -3362,6 +3741,9 @@ static void SCR_DrawScreen (void)
 		SCR_CheckDrawCenterString();
 	}
 	SCR_DrawNetGraph ();
+	// the menu, video playback, the light editor, the loading screen and the console
+	// stay at full white: the page r_hud_brightness is set from must never dim with it
+	DrawQ_SetUIColorScale(1.0f);
 #ifdef CONFIG_MENU
 	if(!scr_loading)
 		MR_Draw();
@@ -3387,6 +3769,9 @@ static void SCR_DrawScreen (void)
 	}
 
 	SCR_DrawConsole();
+	// ...and what is drawn over the console is in-game again: the download bar, the
+	// brand, the r_speeds report, the fps meter, the reel caption (1 while loading)
+	DrawQ_SetUIColorScale(hudscale);
 	SCR_DrawInfobar();
 
 	if (!scr_loading)
@@ -3406,6 +3791,9 @@ static void SCR_DrawScreen (void)
 
 	R_Mesh_Finish();
 	DrawQ_Finish();
+	// nothing outside this function may inherit the in-game scale (DrawQ_Finish has
+	// just flushed, so this is an assignment)
+	DrawQ_SetUIColorScale(1.0f);
 	R_RenderTarget_FreeUnused(false);
 }
 

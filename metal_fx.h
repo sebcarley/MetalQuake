@@ -68,13 +68,14 @@ unsigned int MetalFX_TemporalOutputTextureUsage(void);
 /// METAL.md Phase 8-5: make sure the one-slot scaler cache holds a usable
 /// scaler for exactly this key, minting one if the key changed. `intextype`
 /// is the pooled intermediate's engine textype (TEXTYPE_COLORBUFFER /
-/// 16F / 32F); `hdr` selects the extended-range output format and the HDR
-/// colour-processing mode together, by the same expression that formats the
-/// screen texture. Returns false -- and remembers the refusal per key, so the
+/// 16F / 32F); `hdr` selects the HDR colour-processing mode (only ever into a
+/// float output), and `outfloat` selects the RGBA16Float output format and
+/// must be the destination's REAL format -- Metal_Backend_ScreenIsFloat(),
+/// which is EDR or r_dither holding the frame float (REVIEW 0.5). Returns false -- and remembers the refusal per key, so the
 /// factory is never retried per frame -- whenever MetalFX is absent, the
 /// textype is unsupported, or the factory declines. The caller's gate treats
 /// false as "fall back to the fused bilinear path this frame".
-qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr);
+qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr, qbool outfloat);
 
 /// Encode the cached scaler into `cmdbuf`, upscaling `srctex` into `dsttex`
 /// (all three are __bridge'd Metal objects, the vid_metal.h void* convention).
@@ -104,8 +105,8 @@ void MetalFX_TemporalScaleRange(float *outmin, float *outmax);
 
 /// Make sure the temporal cache holds a scaler for exactly this key, minting
 /// one if the key changed, with the same per-key failure memoisation as the
-/// spatial cache. Same textype/hdr contract as MetalFX_ScalerReady.
-qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr);
+/// spatial cache. Same textype/hdr/outfloat contract as MetalFX_ScalerReady.
+qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr, qbool outfloat);
 
 /// Encode the cached temporal scaler. `depthtex` and `motiontex` are this
 /// frame's render-resolution scene depth and motion-vector textures;
@@ -124,11 +125,11 @@ static inline qbool MetalFX_Available(void) { return false; }
 static inline unsigned int MetalFX_ColorTextureUsage(void) { return 0; }
 static inline unsigned int MetalFX_OutputTextureUsage(void) { return 0; }
 static inline unsigned int MetalFX_TemporalOutputTextureUsage(void) { return 0; }
-static inline qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr) { (void)inwidth; (void)inheight; (void)outwidth; (void)outheight; (void)intextype; (void)hdr; return false; }
+static inline qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr, qbool outfloat) { (void)inwidth; (void)inheight; (void)outwidth; (void)outheight; (void)intextype; (void)hdr; (void)outfloat; return false; }
 static inline qbool MetalFX_EncodeUpscale(void *cmdbuf, void *srctex, void *dsttex) { (void)cmdbuf; (void)srctex; (void)dsttex; return false; }
 static inline qbool MetalFX_TemporalAvailable(void) { return false; }
 static inline void MetalFX_TemporalScaleRange(float *outmin, float *outmax) { if (outmin) *outmin = 0; if (outmax) *outmax = 0; }
-static inline qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr) { (void)inwidth; (void)inheight; (void)outwidth; (void)outheight; (void)intextype; (void)hdr; return false; }
+static inline qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr, qbool outfloat) { (void)inwidth; (void)inheight; (void)outwidth; (void)outheight; (void)intextype; (void)hdr; (void)outfloat; return false; }
 static inline qbool MetalFX_EncodeTemporalUpscale(void *cmdbuf, void *srctex, void *depthtex, void *motiontex, void *reactivetex, void *dsttex, float jitterx, float jittery, qbool reset) { (void)cmdbuf; (void)srctex; (void)depthtex; (void)motiontex; (void)reactivetex; (void)dsttex; (void)jitterx; (void)jittery; (void)reset; return false; }
 
 #endif // USE_METAL_RENDERER

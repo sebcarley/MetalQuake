@@ -44,6 +44,8 @@
 #include "metal_backend.h"    // METAL.md Phase 8-1a: the dump's Metal arm reads fbo 0 by name
 #include "r_textures.h"       // TEXF_* -- the sampler choice for the published term. Pulls only
                               // qtypes.h/qdefs.h, so this file stays free of the engine proper.
+#include "sys.h"              // Sys_HitchStart/Sys_HitchReport (METAL_HITCH); pulls only
+                              // qtypes.h/qdefs.h, as r_textures.h does
 
 // THE SPOT CONE, spliced into ALL THREE kernels (F6, the handlamp). Defined once
 // here and injected by the three newLibraryWithSource calls, exactly as
@@ -240,6 +242,19 @@ static const char *kTraceSrc =
 "    float contact;\n"        // BEAUTY B3 (2026-09-17): contact-hardened shadows -- the dominant light's penumbra disc scaled by the blocker's distance (0 = the old bytes)
 "    uint shadowlights;\n"    // rt_metal_shadowlights (2026-09-19): how many of a pixel's brightest lights get a shadow test (1 = the dominant alone, the old bytes)
 "    uint shadowlightrays;\n" // rt_metal_shadowlights_rays: rays spent on each runner-up
+// REVIEW 0.6 (rt_metal_jitter): the jitter is a PREPROCESSOR variant, not a runtime
+// branch. Measured: with the three additions below as untaken uniform branches, the
+// shipped kernel's term moved on 126-226 of 291,600 texels in the played configuration
+// (demo5 f2997-f3003, every run of each binary self-identical) -- Metal's default fast
+// math re-schedules the old code around new code even when it never runs. So the
+// shipped PSO is RT_JITTER 0, whose preprocessed text is the old kernel's exactly, and
+// the RT_JITTER 1 PSO is compiled on first enable (the RT_FROXEL shape).
+"#if RT_JITTER\n"
+"    float jitterx;\n"        // this trace's primary-ray offset in ITS texels, kernel frame
+"    float jittery;\n"
+"    float pjitterx;\n"       // the previous trace's offset, for the history lookup
+"    float pjittery;\n"
+"#endif\n"
 "};\n"
 "kernel void rt_trace(texture2d<float, access::write> outtex [[texture(0)]],\n"
 "                     texture2d<float, access::read> histIn [[texture(1)]],\n"    // prev-frame history (world pos + vis)
@@ -326,6 +341,15 @@ static const char *kTraceSrc =
 "    bool inbounds = (gid.x < cam.w && gid.y < cam.h);\n"
 "    float sx = (2.0f * (float(gid.x) + 0.5f) / float(cam.w) - 1.0f) * cam.tanx;\n"
 "    float sy = (2.0f * (float(gid.y) + 0.5f) / float(cam.h) - 1.0f) * cam.tany;\n"  // GL window coords: row 0 = bottom
+// REVIEW 0.6: the raster's TAA jitter, so texel (c,r) is the jittered sample the
+// raster drew at pixel (c,r). OVERWRITES rather than adds (at 0/0 the lines above
+// stand), and exists only in the RT_JITTER 1 PSO.
+"#if RT_JITTER\n"
+"    if (cam.jitterx != 0.0f || cam.jittery != 0.0f) {\n"
+"        sx = (2.0f * (float(gid.x) + 0.5f + cam.jitterx) / float(cam.w) - 1.0f) * cam.tanx;\n"
+"        sy = (2.0f * (float(gid.y) + 0.5f + cam.jittery) / float(cam.h) - 1.0f) * cam.tany;\n"
+"    }\n"
+"#endif\n"
 "    float3 ro = float3(cam.origin);\n"
 "    float3 rd = normalize(float3(cam.forward) + sx * float3(cam.right) + sy * float3(cam.up));\n"
 "    ray r;\n"
@@ -798,11 +822,42 @@ static const char *kTraceSrc =
 // dominant's visibility alone and has nowhere to put a second light's colour,
 // exactly as the secondary estimate above is gated.
 "        float3 dom2 = float3(0.0f);\n"
+// RT_RUPSMOOTH, second cut (2026-09-29 evening). Seb on the first: "You have taken
+// the hard lights and softened the edges only - so they now have a weird ring".
+// The ring is the DOMINANCE BOUNDARY: the dominant light and the runners-up were
+// two estimators with two histories, so where the brightest light changes (e1m5's
+// entrance: a lamp near the wall inside an egg-shaped region, the pillar torches
+// outside it) one side was smooth and the other grainy, and at the seam each
+// history held the other light's shadow. The tested SET is the same on both sides
+// (the dominant plus the next two by the same vote), so the variant now carries
+// ONE quantity for the set: the occluded share of the set's unoccluded light,
+// per channel, accumulated once. Who is brightest no longer matters.
+"#if RT_RUPSMOOTH\n"
+"        float3 rupfull = float3(0.0f);\n"   // the runners-up's unoccluded light
+"        float3 rupocc = float3(0.0f);\n"    // and the occluded part of it, this frame
+"#endif\n"
 "        if (cam.shadowlights > 1u && cam.walllight > 0.0f) {\n"
 "            uint want = min(cam.shadowlights - 1u, 3u);\n"
 "            uint N3 = clamp(cam.shadowlightrays, 1u, 8u);\n"
+// THE CHAINMAIL (rt_metal_shadowlights_smooth, 2026-09-29). Seb: "a slight screen
+// door/moire/chainmail type pattern on certain lit textures". The static
+// rotation below is interleaved-gradient noise -- the classic WOVEN dither --
+// and with two rays a runner-up's visibility has three levels, so every
+// penumbra of every non-dominant light printed that weave into the term,
+// standing still, where neither the history nor the temporal scaler could
+// average it; the scaler then magnified it 2.67x. Measured on his demomesh
+// (e1m5), grain of the term as a share of its level: 6.3% at f4500 as played,
+// 0.7% with the runners-up off. RT_RUPSMOOTH 1 rotates the set per frame from
+// the kernels' own selection stream (slot 5; frame-invariant at history 0 like
+// every other use of it) and carries the result in the secondary history
+// below. A PREPROCESSOR variant, not a branch (the REVIEW 0.6 rule): at 0 the
+// preprocessed text is the old kernel's exactly.
+"#if RT_RUPSMOOTH\n"
+"            float rot3 = 6.2831853f * RT_SELRAND(gid, cam.frame, 5u, cam.history);\n"
+"#else\n"
 "            float ign3 = fract(52.9829189f * fract(0.06711056f * float(gid.x) + 0.00583715f * float(gid.y)));\n"
 "            float rot3 = 6.2831853f * ign3;\n"
+"#endif\n"
 "            intersector<triangle_data, instancing> si3;\n"
 "            si3.set_triangle_cull_mode(triangle_cull_mode::none);\n"
 "            si3.accept_any_intersection(true);\n"
@@ -825,6 +880,10 @@ static const char *kTraceSrc =
 "                    if (si3.intersect(sr, accel, 0x3u).type != intersection_type::none) hits3 += 1.0f;\n"
 "                }\n"
 "                dom2 += ruplc[j] * (rupg[j] * (hits3 / float(N3)) * (1.0f - cam.darkness));\n"
+"#if RT_RUPSMOOTH\n"
+"                rupfull += ruplc[j] * rupg[j];\n"
+"                rupocc += ruplc[j] * (rupg[j] * (hits3 / float(N3)));\n"
+"#endif\n"
 "            }\n"
 "        }\n"
 // ONE-BOUNCE DIFFUSE GI (rt_metal_gi, GIARC G1, 2026-08-29). One cosine-
@@ -1075,6 +1134,24 @@ static const char *kTraceSrc =
 "        // sample jitter -> smooth penumbra + no screen-locked shower-door shimmer.\n"
 "        float va = vis;\n"
 "        float3 seca = sec;\n"
+// rt_metal_shadowlights_smooth: the tested set's occluded SHARE, accumulated (a
+// share, not an amount: under the ray jitter a texel at a light's edge samples
+// inside and outside it on alternate frames, and an accumulated AMOUNT over-
+// subtracts on the frames the light is absent -- the first cut's dark rim).
+// It borrows the SECONDARY history's texture, which is idle whenever
+// rt_metal_lightsample is not 2 (the shipped 0 and the fog-only 1 never write
+// a secondary estimate); under mode 2 the texture is the estimator's and the
+// set stays on the old path. The weight is a fixed 0.8 rather than cam.history: the
+// dominant's weight is the player's (Seb plays 0.25, about a frame and a
+// third) and is cut by its own change detector, and a frame-rotated two-ray
+// set needs six or seven frames to settle. Inside the cam.history > 0 block,
+// so a bed at history 0 has no accumulation and no rotation.
+"#if RT_RUPSMOOTH\n"
+"        bool setsmooth = (cam.lsample == 0u && cam.shadowlights > 1u && cam.walllight > 0.0f);\n"
+"        float3 setfull = blc * bg + rupfull;\n"                      // the tested set, unoccluded
+"        float3 setfrac = (blc * (bg * (1.0f - vis)) + rupocc) / max(setfull, float3(1.0e-4f));\n"
+"        float3 setfraca = setfrac;\n"
+"#endif\n"
 "        float3 gia = gib;\n"
 "        float goa = gob;\n"   // BEAUTY B1: the occlusion follows gia through every path below
 // G4-1: a rate-skipped pixel's baseline is its own previous value (an
@@ -1090,6 +1167,10 @@ static const char *kTraceSrc =
 // G1 rule) -- EXCEPT the very first trace after creation/resize, when the
 // other ping-pong slot has never been written; hasPrev is 0 exactly then,
 // so the guard leaves those pixels at zero for that one frame.
+// REVIEW 0.6: under rt_metal_jitter the texel held here was sampled |j - pj|
+// (<= 1 texel) from this frame's ray. Harmless at the shipped rt_metal_gi_rate 1,
+// where every pixel fires and this hold never runs; a rate-2/4 A/B under the
+// jitter holds a sample up to a texel off, which is worth knowing before reading it.
 "        if (cam.gi != 0u && !gifire && cam.hasPrev != 0u) { float4 gh0 = giIn.read(gid); gia = gh0.rgb; goa = gh0.a; }\n"
 "        if (cam.history > 0.0f && cam.hasPrev != 0u) {\n"
 "            float3 rel = hit - float3(cam.pOrigin);\n"
@@ -1099,13 +1180,34 @@ static const char *kTraceSrc =
 "                float syr = dot(rel, float3(cam.pUp)) / tz;\n"
 "                float fx = ((sxr / cam.pTanx) + 1.0f) * 0.5f * float(cam.w) - 0.5f;\n"
 "                float fy = ((syr / cam.pTany) + 1.0f) * 0.5f * float(cam.h) - 0.5f;\n"
+// REVIEW 0.6: the previous texel k was traced through k+pjitter, so the nearest
+// previous SAMPLE is round(f - pjitter) -- today's <=0.5-texel moving-camera
+// bound. RT_JITTER 1 only.
+"#if RT_JITTER\n"
+"                if (cam.pjitterx != 0.0f || cam.pjittery != 0.0f) { fx -= cam.pjitterx; fy -= cam.pjittery; }\n"
+"#endif\n"
 "                // bound-check in the FLOAT domain before converting (out-of-range\n"
 "                // float->int is undefined; a grazing hit can push fx far off-screen)\n"
 "                if (fx >= -0.5f && fx < float(cam.w) - 0.5f && fy >= -0.5f && fy < float(cam.h) - 0.5f) {\n"
 "                    float4 H = histIn.read(uint2(uint(round(fx)), uint(round(fy))));\n"
 "                    float footprint = tz * 2.0f * cam.pTanx / float(cam.w);\n"  // world units / pixel at that depth
 "                    float thr = max(1.0f, footprint * 3.0f);\n"
+// REVIEW 0.6: while jittered, a PARKED view reads sub-texel offsets every frame,
+// and on a grazing floor the isotropic test rejects them (the along-plane slide is
+// s*footprint/|cos i|). The RT_JITTER 1 PSO accepts a coplanar lookup whose slide,
+// projected back to the screen (x|cos i|), is under the same 3-footprint tolerance
+// -- it only ever WIDENS acceptance, and only while jittered. The #else arm is the
+// old test, character for character.
+"#if RT_JITTER\n"
+"                    bool hok = length(H.xyz - hit) < thr;\n"
+"                    if (!hok && (cam.jitterx != 0.0f || cam.jittery != 0.0f || cam.pjitterx != 0.0f || cam.pjittery != 0.0f)) {\n"
+"                        float3 dh = H.xyz - hit; float pn = dot(dh, ng);\n"
+"                        hok = fabs(pn) < thr && length(dh - pn * ng) * max(fabs(dot(rd, ng)), 0.1f) < thr;\n"
+"                    }\n"
+"                    if (hok) {\n"
+"#else\n"
 "                    if (length(H.xyz - hit) < thr) {\n"                         // same surface point -> reuse history
+"#endif\n"
 "                        float dd = fabs(vis - H.w);\n"                          // large change (moving shadow) -> trust current more
 "                        float wgt = cam.history * (1.0f - smoothstep(0.35f, 0.85f, dd));\n"
 "                        va = mix(vis, H.w, wgt);\n"
@@ -1114,6 +1216,9 @@ static const char *kTraceSrc =
 // pixel per frame -- and its history weight is the plain cam.history: dd above is
 // the DOMINANT light's change and says nothing about this one.
 "                        if (cam.lsample != 0u) seca = mix(sec, secIn.read(uint2(uint(round(fx)), uint(round(fy)))).rgb, cam.history);\n"
+"#if RT_RUPSMOOTH\n"
+"                        if (setsmooth) setfraca = mix(setfrac, secIn.read(uint2(uint(round(fx)), uint(round(fy)))).rgb, 0.8f);\n"
+"#endif\n"
 // The GI colour rides the SAME reprojection and world-position validation
 // (GIARC G1). Its history weight is its OWN cam.gihistory -- deep by default,
 // GI is low-frequency and one sample per pixel per frame needs it -- and dd
@@ -1131,7 +1236,11 @@ static const char *kTraceSrc =
 "            }\n"
 "        }\n"
 "        histOut.write(float4(hit, va), gid);\n"
+"#if RT_RUPSMOOTH\n"
+"        secOut.write(float4(setsmooth ? setfraca : seca, 0.0f), gid);\n"
+"#else\n"
 "        secOut.write(float4(seca, 0.0f), gid);\n"                // store world pos + accumulated visibility
+"#endif\n"
 "        giOut.write(float4(gia, (cam.giao > 0.0f) ? goa : 0.0f), gid);\n"   // zeros when gi is off, so an enable ramps from black, never from garbage; B1: the occlusion in alpha, 0 at giao 0 (the old bytes)
 "        if (cam.walllight > 0.0f) {\n"
 "            // FULL RT WALL LIGHTING: the scene is rendered fullbright (albedo), so the\n"
@@ -1148,12 +1257,20 @@ static const char *kTraceSrc =
 // overshoot the true non-dominant sum, and the composite MULTIPLIES this term into
 // the scene -- an overshoot would print as a black bruise rather than as noise.
 // Clamping the SUBTRACTION leaves the old expression exact when seca is zero.
+"#if RT_RUPSMOOTH\n"
+"            float3 dom = setsmooth ? (setfraca * setfull * (1.0f - cam.darkness)) : (blc * bg * (1.0f - cam.darkness) * (1.0f - va));\n"
+"#else\n"
 "            float3 dom = blc * bg * (1.0f - cam.darkness) * (1.0f - va);\n"
+"#endif\n"
 "            float3 sub = min(seca * (1.0f - cam.darkness), max(Lsum - dom, float3(0.0f)));\n"
 // Clamped for the same reason the estimator above is: the composite MULTIPLIES
 // this term, so nothing may drive it negative. dom2 is exact rather than
 // estimated, but the three subtractions share one budget.
+"#if RT_RUPSMOOTH\n"
+"            float3 sub2 = setsmooth ? float3(0.0f) : min(dom2, max(Lsum - dom - sub, float3(0.0f)));\n"   // the set's whole share is in dom
+"#else\n"
 "            float3 sub2 = min(dom2, max(Lsum - dom - sub, float3(0.0f)));\n"
+"#endif\n"
 "            float3 Lamb = float3(cam.ambient);\n"
 "            if (cam.giao > 0.0f) Lamb *= (1.0f - cam.giao * goa);\n"   // BEAUTY B1: AO darkens the sourceless fill only; a uniform branch, so 0 is the old expression
 "            float3 Lrt = Lamb + (cam.walllight * 6.0f) * (Lsum - dom - sub - sub2);\n"
@@ -2542,12 +2659,19 @@ typedef struct {
 	float contact;       // BEAUTY B3 (appended 2026-09-17): contact-hardened dominant shadow, 0 = old bytes
 	uint32_t shadowlights;    // rt_metal_shadowlights (appended 2026-09-19): brightest lights shadow-tested per pixel, 1 = the dominant alone, the old bytes
 	uint32_t shadowlightrays; // rt_metal_shadowlights_rays: rays per runner-up
+	float jitterx, jittery;   // REVIEW 0.6 (appended 2026-09-24): this trace's primary-ray offset, texels, kernel frame
+	float pjitterx, pjittery; // the previous trace's, for the history lookup
 } RTCam;
 // The MSL Cam is all packed_float3 (12 bytes, 4-aligned) and 4-byte scalars, so
 // its size is the field count times four with no padding; this pins the C
 // mirror to the same arithmetic. The F4 lesson: a short bind reads its tail
 // PAST the buffer silently in release and aborts under validation.
-_Static_assert(sizeof(RTCam) == 284, "RTCam must mirror the MSL Cam field-for-field, tightly packed");
+_Static_assert(sizeof(RTCam) == 300, "RTCam must mirror the MSL Cam field-for-field, tightly packed");
+// THE KERNEL LIGHT CAP: the kernel strings hard-code 256 (rt_trace/rt_shaft/rt_fog's
+// `nl = min(cam.numLights, 256u)`, tgl[256 * RTL], tflags/gflags[8], tlist[256],
+// uchar gtlist[256]); cl_screen.c ranks the upload against RT_KERNEL_MAXLIGHTS.
+// Move one and the build stops until the other moves with it.
+_Static_assert(RT_KERNEL_MAXLIGHTS == 256, "the kernel strings hard-code a 256-light cap: move them with RT_KERNEL_MAXLIGHTS");
 
 static id<MTLDevice>               s_dev;
 static id<MTLCommandQueue>         s_queue;
@@ -2556,6 +2680,10 @@ static id<MTLCommandQueue>         s_queue;
 // implying it owned them. See METAL.md Phase 5.
 static int                         s_sharedDevice;
 static id<MTLComputePipelineState> s_pso;
+// REVIEW 0.6: the RT_JITTER 1 trace PSO (rt_metal_jitter), compiled on first enable
+static id<MTLComputePipelineState> s_jitterPso;
+static NSString                    *s_jitterSrc;
+static int                          s_jitterTried;
 
 // blue-noise jitter (rt_metal_bluenoise, the weave fix): the committed 64x64x8
 // table as ONE shared buffer, bound unconditionally at every kernel dispatch
@@ -2566,6 +2694,8 @@ static id<MTLComputePipelineState> s_pso;
 static id<MTLBuffer>               s_bnbuf;
 static int                         s_bluenoiseWant = 1;
 static int                         s_bluenoiseCompiled = -1;   // what the live PSOs carry; -1 = never
+static int                         s_rupSmoothWant = 1;        // rt_metal_shadowlights_smooth (RT_RUPSMOOTH)
+static int                         s_rupSmoothCompiled = -1;
 static void                        rt_compile_kernels(void);   // defined below the init that calls it
 
 // world acceleration structure (BLAS, built once per map)
@@ -2710,6 +2840,13 @@ static float                       s_scale = 1.0f;   // trace resolution / viewp
 static int                         s_reproject = 1;  // rt_metal_reproject: composite reprojects the shown term
 static int                         s_reprojDepth = 1; // rt_metal_reproject_depth: and does it translation-aware
 static int                         s_sameFrame;      // rt_metal_sameframe: show THIS frame's trace (the RT_METAL_SYNC slot order, as a runtime cvar)
+// REVIEW 0.6 (rt_metal_jitter): the cvar, this frame's raster offset in render
+// pixels (kernel frame), the offset the LAST trace used (texels), and the
+// change-only state (0 off, 1 dormant, 2 armed)
+static int                         s_jitterWant;
+static float                       s_jitterPx[2];
+static float                       s_prevJitter[2];
+static int                         s_jitterState;
 
 // The camera each slot's trace was ENCODED with. The composite SHOWS a slot one
 // frame later, by which time s_cam holds the new frame's camera -- without this
@@ -3243,6 +3380,7 @@ static void rt_compile_kernels(void)
 	@autoreleasepool {
 		NSError *err = nil;
 		int bn = s_bluenoiseWant ? 1 : 0;
+		int rs = s_rupSmoothWant ? 1 : 0;   // rt_metal_shadowlights_smooth: RT_RUPSMOOTH in the two trace sources
 		// the table's slice count, so the kernels cycle `frame & (T-1)` for
 		// whatever shape test/bluenoise-gen.py wrote (8 or 16)
 		unsigned bns = (unsigned)(sizeof(rt_bluenoise64) / sizeof(rt_bluenoise64[0]));
@@ -3251,10 +3389,18 @@ static void rt_compile_kernels(void)
 		// set, output must be bit-identical to the tiled path.
 		const char *notile = getenv("RT_METAL_NOTILE");
 		int nt = (notile && atoi(notile)) ? 1 : 0;
-		NSString *src = [NSString stringWithFormat:@"#define RT_NOTILE %d\n#define RTL %du\n#define RT_BLUENOISE %d\n#define RT_BN_SLICES %uu\n%s%s%s",
-						 nt, RT_LIGHT_STRIDE, bn, bns, kConeSrc, kJitterSrc, kTraceSrc];
+		NSString *src = [NSString stringWithFormat:@"#define RT_NOTILE %d\n#define RTL %du\n#define RT_BLUENOISE %d\n#define RT_BN_SLICES %uu\n#define RT_JITTER 0\n#define RT_RUPSMOOTH %d\n%s%s%s",
+						 nt, RT_LIGHT_STRIDE, bn, bns, rs, kConeSrc, kJitterSrc, kTraceSrc];
+		// REVIEW 0.6: the same source with RT_JITTER 1, compiled lazily the first
+		// time rt_metal_jitter arms (rt_ensure_jitter_pso). Rebuilt with every
+		// trace compile, so it always shares the shipped PSO's defines.
+		s_jitterSrc = [NSString stringWithFormat:@"#define RT_NOTILE %d\n#define RTL %du\n#define RT_BLUENOISE %d\n#define RT_BN_SLICES %uu\n#define RT_JITTER 1\n#define RT_RUPSMOOTH %d\n%s%s%s",
+						 nt, RT_LIGHT_STRIDE, bn, bns, rs, kConeSrc, kJitterSrc, kTraceSrc];
+		s_jitterPso = nil; s_jitterTried = 0;
+		double hitch = Sys_HitchStart();	// METAL_HITCH: at init and on a blue-noise toggle
 		id<MTLLibrary> lib = [s_dev newLibraryWithSource:src options:nil error:&err];
 		id<MTLComputePipelineState> pso = lib ? [s_dev newComputePipelineStateWithFunction:[lib newFunctionWithName:@"rt_trace"] error:&err] : nil;
+		Sys_HitchReport(hitch, "rt-kernel", "rt_trace");
 		if (pso)
 			s_pso = pso;
 		else
@@ -3266,8 +3412,10 @@ static void rt_compile_kernels(void)
 			NSError *serr = nil;
 			NSString *ssrc = [NSString stringWithFormat:@"#define RT_NOTILE %d\n#define RTL %du\n#define RT_BLUENOISE %d\n#define RT_BN_SLICES %uu\n%s%s%s",
 							  nt, RT_LIGHT_STRIDE, bn, bns, kConeSrc, kJitterSrc, kShaftSrc];
+			double shitch = Sys_HitchStart();
 			id<MTLLibrary> slib = [s_dev newLibraryWithSource:ssrc options:nil error:&serr];
 			id<MTLComputePipelineState> spso = slib ? [s_dev newComputePipelineStateWithFunction:[slib newFunctionWithName:@"rt_shaft"] error:&serr] : nil;
+			Sys_HitchReport(shitch, "rt-kernel", "rt_shaft");
 			if (spso)
 				s_shaftPso = spso;
 			else if (!s_shaftPso)
@@ -3280,8 +3428,10 @@ static void rt_compile_kernels(void)
 		{
 			NSError *xerr = nil;
 			NSString *xsrc = [NSString stringWithFormat:@"%s%s", kConeSrc, kFogFilterSrc];
+			double xhitch = Sys_HitchStart();
 			id<MTLLibrary> xlib = [s_dev newLibraryWithSource:xsrc options:nil error:&xerr];
 			id<MTLComputePipelineState> xpso = xlib ? [s_dev newComputePipelineStateWithFunction:[xlib newFunctionWithName:@"rt_fogfilter"] error:&xerr] : nil;
+			Sys_HitchReport(xhitch, "rt-kernel", "rt_fogfilter");
 			if (xpso)
 				s_fogFilterPso = xpso;
 			else if (!s_fogFilterPso)
@@ -3294,8 +3444,10 @@ static void rt_compile_kernels(void)
 		{
 			NSError *terr = nil;
 			NSString *tsrc = [NSString stringWithFormat:@"%s%s", kConeSrc, kFogTemporalSrc];
+			double thitch = Sys_HitchStart();
 			id<MTLLibrary> tlib = [s_dev newLibraryWithSource:tsrc options:nil error:&terr];
 			id<MTLComputePipelineState> tpso = tlib ? [s_dev newComputePipelineStateWithFunction:[tlib newFunctionWithName:@"rt_fogtemporal"] error:&terr] : nil;
+			Sys_HitchReport(thitch, "rt-kernel", "rt_fogtemporal");
 			if (tpso)
 				s_fogTemporalPso = tpso;
 			else if (!s_fogTemporalPso)
@@ -3326,8 +3478,10 @@ static void rt_compile_kernels(void)
 			s_froxelSrc = [NSString stringWithFormat:@"#define RT_NOTILE %d\n#define RTL %du\n#define RT_BLUENOISE %d\n#define RT_BN_SLICES %uu\n#define RT_FROXEL 1\n%s%s%s%s",
 							  nt, RT_LIGHT_STRIDE, bn, bns, kConeSrc, kJitterSrc, DPD_SHADER_PRELUDE, kFogSrc];
 			s_froxelPso = nil; s_froxelTried = 0;
+			double fhitch = Sys_HitchStart();
 			id<MTLLibrary> flib = [s_dev newLibraryWithSource:fsrc options:nil error:&ferr];
 			id<MTLComputePipelineState> fpso = flib ? [s_dev newComputePipelineStateWithFunction:[flib newFunctionWithName:@"rt_fog"] error:&ferr] : nil;
+			Sys_HitchReport(fhitch, "rt-kernel", "rt_fog");
 			if (fpso)
 				s_fogPso = fpso;
 			else if (!s_fogPso)
@@ -3335,6 +3489,7 @@ static void rt_compile_kernels(void)
 						ferr ? ferr.localizedDescription.UTF8String : "unknown");
 		}
 		s_bluenoiseCompiled = bn;
+		s_rupSmoothCompiled = rs;
 	}
 }
 
@@ -3345,6 +3500,17 @@ void RT_Metal_SetBlueNoise(int enable)
 {
 	s_bluenoiseWant = enable ? 1 : 0;
 	if (s_dev && s_bluenoiseCompiled >= 0 && s_bluenoiseCompiled != s_bluenoiseWant)
+		rt_compile_kernels();
+}
+
+// rt_metal_shadowlights_smooth: a compiled-in choice like the blue noise (the
+// off arm must be the old kernel's TEXT), lazily rebuilt on a change.
+void RT_Metal_SetShadowSmooth(int enable)
+{
+	static int last = -1;
+	s_rupSmoothWant = enable ? 1 : 0;
+	if (s_rupSmoothWant != last) { last = s_rupSmoothWant; fprintf(stderr, "RT shadow lights: %s\n", s_rupSmoothWant ? "smoothed (frame-rotated, accumulated)" : "static dither (the 2026-09-19 kernel)"); }
+	if (s_dev && s_rupSmoothCompiled >= 0 && s_rupSmoothCompiled != s_rupSmoothWant)
 		rt_compile_kernels();
 }
 
@@ -3361,6 +3527,9 @@ void RT_Metal_SetWorld(const float *verts3f, int numverts, const int *tris3i, in
 	if (s_accel && token == s_worldToken) return;   // already built for this world
 
 	@autoreleasepool {
+		// METAL_HITCH: a synchronous wait-and-build, reached in-frame from
+		// RT_SceneComposite on a map's first RT frame
+		double hitch = Sys_HitchStart();
 		rt_wait_pending();   // an in-flight async trace may still read the old BLAS
 		s_vbuf = nil; s_ibuf = nil; s_accel = nil; s_wabuf = nil;   // drop any previous world
 		// the lava and sky BLASes index into s_vbuf -- drop them with the world and
@@ -3419,6 +3588,7 @@ void RT_Metal_SetWorld(const float *verts3f, int numverts, const int *tris3i, in
 		s_irrDirty = 0;
 		fprintf(stderr, "RT_Metal: built acceleration structure (%d tris, %d verts, %.1f MB)\n",
 				numtris, numverts, sz.accelerationStructureSize / 1048576.0);
+		Sys_HitchReport(hitch, "rt-blas", "world %d tris %.1f MB", numtris, sz.accelerationStructureSize / 1048576.0);
 	}
 }
 
@@ -3472,6 +3642,7 @@ void RT_Metal_SetLavaSurfaces(const int *tris3i, int numtris, unsigned long toke
 	if (s_lavaAccel && token == s_lavaToken) return;   // already built for this list
 
 	@autoreleasepool {
+		double hitch = Sys_HitchStart();	// METAL_HITCH: synchronous, in-frame on a list change
 		rt_wait_pending();   // an in-flight async trace may still read the old BLAS
 		s_lavaAccel = nil; s_libuf = nil;
 
@@ -3502,6 +3673,7 @@ void RT_Metal_SetLavaSurfaces(const int *tris3i, int numtris, unsigned long toke
 		[bcb waitUntilCompleted];
 		if (bcb.error) { fprintf(stderr, "RT_Metal: lava AS build failed: %s\n", bcb.error.localizedDescription.UTF8String); s_lavaAccel = nil; return; }
 		s_lavaToken = token;
+		Sys_HitchReport(hitch, "rt-blas", "lava %d tris", numtris);
 		if (numtris > 0)
 			fprintf(stderr, "RT_Metal: built lava acceleration structure (%d tris)\n", numtris);
 	}
@@ -3516,6 +3688,7 @@ void RT_Metal_SetSkySurfaces(const int *tris3i, int numtris, unsigned long token
 	if (s_skyAccel && token == s_skyToken) return;   // already built for this list
 
 	@autoreleasepool {
+		double hitch = Sys_HitchStart();	// METAL_HITCH: synchronous, in-frame on a list change
 		rt_wait_pending();   // an in-flight async trace may still read the old BLAS
 		s_skyAccel = nil; s_skyibuf = nil;
 
@@ -3546,6 +3719,7 @@ void RT_Metal_SetSkySurfaces(const int *tris3i, int numtris, unsigned long token
 		[bcb waitUntilCompleted];
 		if (bcb.error) { fprintf(stderr, "RT_Metal: sky AS build failed: %s\n", bcb.error.localizedDescription.UTF8String); s_skyAccel = nil; return; }
 		s_skyToken = token;
+		Sys_HitchReport(hitch, "rt-blas", "sky %d tris", numtris);
 		if (numtris > 0)
 			fprintf(stderr, "RT_Metal: built sky acceleration structure (%d tris)\n", numtris);
 	}
@@ -3562,6 +3736,7 @@ void RT_Metal_SetLiquidSurfaces(const int *tris3i, int numtris, unsigned long to
 	if (s_liqAccel && token == s_liqToken) return;   // already built for this list
 
 	@autoreleasepool {
+		double hitch = Sys_HitchStart();	// METAL_HITCH: synchronous, in-frame on a list change
 		rt_wait_pending();   // an in-flight async trace may still read the old BLAS
 		s_liqAccel = nil; s_liqibuf = nil;
 
@@ -3592,6 +3767,7 @@ void RT_Metal_SetLiquidSurfaces(const int *tris3i, int numtris, unsigned long to
 		[bcb waitUntilCompleted];
 		if (bcb.error) { fprintf(stderr, "RT_Metal: liquid AS build failed: %s\n", bcb.error.localizedDescription.UTF8String); s_liqAccel = nil; return; }
 		s_liqToken = token;
+		Sys_HitchReport(hitch, "rt-blas", "liquid %d tris", numtris);
 		if (numtris > 0)
 			fprintf(stderr, "RT_Metal: built liquid acceleration structure (%d tris)\n", numtris);
 	}
@@ -3608,6 +3784,7 @@ void RT_Metal_SetBlendedLiquidSurfaces(const int *tris3i, int numtris, unsigned 
 	if (s_bliqAccel && token == s_bliqToken) return;   // already built for this list
 
 	@autoreleasepool {
+		double hitch = Sys_HitchStart();	// METAL_HITCH: synchronous, in-frame on a list change
 		rt_wait_pending();   // an in-flight async trace may still read the old BLAS
 		s_bliqAccel = nil; s_bliqibuf = nil;
 
@@ -3638,6 +3815,7 @@ void RT_Metal_SetBlendedLiquidSurfaces(const int *tris3i, int numtris, unsigned 
 		[bcb waitUntilCompleted];
 		if (bcb.error) { fprintf(stderr, "RT_Metal: blended liquid AS build failed: %s\n", bcb.error.localizedDescription.UTF8String); s_bliqAccel = nil; return; }
 		s_bliqToken = token;
+		Sys_HitchReport(hitch, "rt-blas", "blended %d tris", numtris);
 		if (numtris > 0)
 			fprintf(stderr, "RT_Metal: built BLENDED liquid acceleration structure (C2) (%d tris)\n", numtris);
 	}
@@ -4240,6 +4418,13 @@ void RT_Metal_SetShadowLights(int lights, int rays)
 	s_cam.shadowlightrays = (uint32_t)r;
 }
 
+void RT_Metal_SetJitter(int enable, float jx, float jy)
+{
+	s_jitterWant = enable ? 1 : 0;
+	s_jitterPx[0] = jx;
+	s_jitterPx[1] = jy;
+}
+
 void RT_Metal_SetTermMax(float knee)
 {
 	// 0 = off (the old bytes: the kernel's branch is not taken); otherwise the
@@ -4490,6 +4675,19 @@ static void rt_pair_release(IOSurfaceRef surf[2], id<MTLTexture> __strong mtex[2
 static bool rt_pair_ensure(IOSurfaceRef surf[2], id<MTLTexture> __strong mtex[2], GLuint gltex[2],
                            int w, int h, GLint filter, const char *label)
 {
+	// REVIEW 0.1: Metal's texture-descriptor validation is always on, so an
+	// out-of-range descriptor ABORTS rather than returning nil. Every
+	// viewport-sized 2D output funnels through here (term, fog, shaft, and the
+	// C2 liquid pair at twice the trace width), so refuse here, print once per
+	// size, and let the caller take its existing fallback.
+	if (!Metal_Texture_SizeFits(0, w, h, 1)) {
+		static int lw = -1, lh = -1;
+		if (w != lw || h != lh) {
+			lw = w; lh = h;
+			fprintf(stderr, "RT_Metal: %stexture %dx%d refused: a 2D texture may not exceed %d on either axis\n", label, w, h, METAL_MAX_TEX2D);
+		}
+		return false;
+	}
 	// METAL.md Phase 5 slice 2: on the shared-device path the whole reason for
 	// the triple is gone. The IOSurface exists so a SECOND MTLDevice's writes
 	// can reach GL, and the GL rectangle name exists so GL can sample it --
@@ -4648,6 +4846,20 @@ static bool rt_ensure_froxel_volumes(int w, int h, int n)
 {
 	if (s_froxA[0] && s_froxA[1] && s_froxB[0] && s_froxB[1] && w == s_froxW && h == s_froxH && n == s_froxN)
 		return true;
+	// REVIEW 0.1, defence in depth under the fog-buffer hold in RT_Metal_Composite:
+	// a 3D axis over METAL_MAX_TEX3D makes newTextureWithDescriptor: ABORT (the
+	// always-on descriptor validation; the 2026-09-18 crashes were exactly this
+	// call). Refuse instead; the caller's false means the 2D fog runs.
+	if (!Metal_Texture_SizeFits(1, w, h, n)) {
+		static int lw = -1, lh = -1, ln = -1;
+		if (w != lw || h != lh || n != ln) {
+			lw = w; lh = h; ln = n;
+			fprintf(stderr, "RT froxel fog volume %dx%dx%d refused: a 3D texture may not exceed %d on any axis -- the 2D fog runs instead\n", w, h, n, METAL_MAX_TEX3D);
+		}
+		rt_release_froxel_volumes();
+		return false;
+	}
+	double hitch = Sys_HitchStart();	// METAL_HITCH: the release waits on the GPU when the volumes are replaced
 	rt_release_froxel_volumes();
 	MTLTextureDescriptor *d = [[MTLTextureDescriptor alloc] init];
 	d.textureType = MTLTextureType3D;
@@ -4665,7 +4877,28 @@ static bool rt_ensure_froxel_volumes(int w, int h, int n)
 	s_froxValid[0] = s_froxValid[1] = 0;
 	s_froxW = w; s_froxH = h; s_froxN = n;
 	fprintf(stderr, "RT froxel fog volume %dx%dx%d (%.1f MB)\n", w, h, n, (double)w * h * n * 8.0 * 4.0 / (1024.0 * 1024.0));
+	Sys_HitchReport(hitch, "froxel-alloc", "%dx%dx%d", w, h, n);
 	return true;
+}
+
+// REVIEW 0.6: the RT_JITTER 1 trace PSO, compiled on first enable from the source
+// the trace compile stashed. A failure prints once and the jitter stays dormant:
+// the shipped trace PSO is untouched either way.
+static void rt_ensure_jitter_pso(void)
+{
+	if (s_jitterPso) return;
+	if (s_jitterTried || !s_jitterSrc || !s_dev) return;
+	s_jitterTried = 1;
+	@autoreleasepool {
+		NSError *err = nil;
+		double hitch = Sys_HitchStart();	// METAL_HITCH: lazy, in-frame, on the first jittered frame
+		id<MTLLibrary> lib = [s_dev newLibraryWithSource:s_jitterSrc options:nil error:&err];
+		id<MTLComputePipelineState> pso = lib ? [s_dev newComputePipelineStateWithFunction:[lib newFunctionWithName:@"rt_trace"] error:&err] : nil;
+		Sys_HitchReport(hitch, "rt-kernel", "rt_trace jitter");
+		if (!pso) { fprintf(stderr, "RT_Metal: jitter trace kernel compile failed (rt_metal_jitter stays dormant): %s\n", err ? err.localizedDescription.UTF8String : "unknown"); return; }
+		s_jitterPso = pso;
+		fprintf(stderr, "RT jitter trace kernel compiled\n");
+	}
 }
 
 // The froxel PSOs, compiled on first enable from the source the fog kernel's
@@ -4678,13 +4911,17 @@ static void rt_ensure_froxel_pso(void)
 	s_froxelTried = 1;
 	@autoreleasepool {
 		NSError *err = nil;
+		double hitch = Sys_HitchStart();	// METAL_HITCH: lazy, in-frame, on the first froxel frame
 		id<MTLLibrary> lib = [s_dev newLibraryWithSource:s_froxelSrc options:nil error:&err];
 		id<MTLComputePipelineState> pso = lib ? [s_dev newComputePipelineStateWithFunction:[lib newFunctionWithName:@"rt_fog"] error:&err] : nil;
+		Sys_HitchReport(hitch, "rt-kernel", "rt_fog froxel");
 		if (!pso) { fprintf(stderr, "RT_Metal: froxel fog kernel compile failed (rt_metal_fog_froxel disabled): %s\n", err ? err.localizedDescription.UTF8String : "unknown"); return; }
 		NSString *isrc = [NSString stringWithFormat:@"%s%s", DPD_SHADER_PRELUDE, kFroxelIntegrateSrc];
 		NSError *ierr = nil;
+		double ihitch = Sys_HitchStart();
 		id<MTLLibrary> ilib = [s_dev newLibraryWithSource:isrc options:nil error:&ierr];
 		id<MTLComputePipelineState> ipso = ilib ? [s_dev newComputePipelineStateWithFunction:[ilib newFunctionWithName:@"rt_froxelintegrate"] error:&ierr] : nil;
+		Sys_HitchReport(ihitch, "rt-kernel", "rt_froxelintegrate");
 		if (!ipso) { fprintf(stderr, "RT_Metal: froxel integrate kernel compile failed (rt_metal_fog_froxel disabled): %s\n", ierr ? ierr.localizedDescription.UTF8String : "unknown"); return; }
 		s_froxelPso = pso; s_froxelIntPso = ipso;
 		fprintf(stderr, "RT froxel fog kernels compiled\n");
@@ -4721,9 +4958,15 @@ static void rt_release_liquid_surface(void)
 }
 static bool rt_ensure_liquid_surface(int w, int h)
 {
+	// REVIEW 0.1: remember a size that failed, so a refusal (or an allocation
+	// failure) is not retried -- with rt_release_liquid_surface's GPU drain --
+	// every frame. A new size tries again.
+	static int failw = -1, failh = -1;
 	if (w < 1 || h < 1) return false;
+	if (w == failw && h == failh) return false;
 	rt_release_liquid_surface();
-	if (!rt_pair_ensure(s_liqsurf, s_liqmtex, s_liqgltex, 2 * w, h, GL_LINEAR, "liquid ")) { rt_release_liquid_surface(); return false; }
+	if (!rt_pair_ensure(s_liqsurf, s_liqmtex, s_liqgltex, 2 * w, h, GL_LINEAR, "liquid ")) { rt_release_liquid_surface(); failw = w; failh = h; return false; }
+	failw = failh = -1;
 	fprintf(stderr, "RT liquid pair %dx%d allocated (own term | reflection)\n", 2 * w, h);
 	return true;
 }
@@ -4807,14 +5050,15 @@ static bool rt_ensure_shaft_surface(int w, int h)
 // NULL when this frame does not dump; *outframe gets the frame number for the
 // stderr line. ONE counter whichever arm calls: only one renderpath runs per
 // vid_restart, and run-stable numbering is the counter's whole contract.
-static const char *rt_dump_decide(int width, int height, int counting, char *namebuf, size_t namesize, int *outframe)
+static const char *rt_dump_decide(int width, int height, int index, char *namebuf, size_t namesize, int *outframe)
 {
 	static int inited = -1;
 	static const char *path = NULL;
 	static int frames[512];
 	static int nframes = 0;
 	static int multi = 0;
-	static int frame = 0;
+	static int frame = 0;   // the playback frame index the last numbered present carried
+	int fresh = 0;          // this present carries a NEW index: it is the frame to match
 	int ondemand = s_dumpNow;   // console-requested snapshot (RT_Metal_RequestDump)
 	s_dumpNow = 0;
 	if (inited < 0) {
@@ -4835,30 +5079,45 @@ static const char *rt_dump_decide(int width, int height, int counting, char *nam
 	}
 	if (!path) return NULL;
 	if (width < 1 || height < 1) return NULL;
-	// Only frames the caller flags as ALIGNED (timedemo playback frames — one per
-	// demo packet, so frame N is the same content in every run) advance the
-	// counter. Presented-frame counting included the load screen, whose frame
-	// count varies run to run: two runs' ".f900" were DIFFERENT demo frames, and
-	// dump A/Bs read as wildly nondeterministic. Cost a determinism hunt.
-	if (counting) ++frame;
-	// RT_METAL_CAMTRACK=1 (BLUENOISE slice 0): one stderr line per COUNTED
+	// A dump's number IS the timedemo's own playback frame count (cls.td_frames,
+	// handed in as `index` by the caller: one per demo packet after signon, and
+	// the "frame N" cl_showfps draws on screen), so frame N is the same content
+	// in every run and the same number the player reads. Any other present --
+	// the loading screen, the timedemo's own pre-start frames, ordinary play --
+	// carries 0 and is never numbered; a present that repeats an index (no
+	// packet parsed that host frame) is not numbered again.
+	//
+	// It used to be a COUNTER the caller advanced on every present with
+	// cls.timedemo set. The 2026-07 fix stopped it counting ordinary play, but
+	// cls.timedemo is raised BEFORE the demo's map loads, and the loading screen
+	// presents through CL_UpdateScreen throttled on host.realtime -- wall clock
+	// (scr_loadingscreen_maxfps) -- so the counter still took a load-timing-
+	// dependent number of loading-screen presents, plus the timedemo's own
+	// three pre-start frames: measured 2026-09-24 on demo5, the old counter's
+	// f = td + 6 on three boots and f = td + 7 with the throttle at 1 ms, so two
+	// runs' ".f120" could be different demo frames (the REVIEW 0.6 session read
+	// one run's f120 byte-identical to another's f119). -benchmarkruns restarts
+	// the numbering with each run (the counter used to carry on), which nothing
+	// dumps across.
+	if (index > 0 && index != frame) { frame = index; fresh = 1; }
+	// RT_METAL_CAMTRACK=1 (BLUENOISE slice 0): one stderr line per NUMBERED
 	// (timedemo playback) frame with this frame's encode camera, so a demo's
 	// parked and moving stretches can be found from one playback instead of
-	// guessed from dump bursts. Needs RT_METAL_DUMP set (the counter above
+	// guessed from dump bursts. Needs RT_METAL_DUMP set (the numbering above
 	// is the frame numbering the dumps use, and it only runs under it).
 	// Bed-only by construction: ~one line per frame is exactly the
 	// console-ink hazard, so it is an env var and never a cvar.
 	{
 		static int ct = -1;
 		if (ct < 0) { const char *e = getenv("RT_METAL_CAMTRACK"); ct = (e && atoi(e)) ? 1 : 0; }
-		if (ct && counting)
+		if (ct && fresh)
 			fprintf(stderr, "RT_Metal: camtrack f%d eye %.1f %.1f %.1f fwd %.3f %.3f %.3f\n", frame,
 					s_cam.origin[0], s_cam.origin[1], s_cam.origin[2], s_cam.forward[0], s_cam.forward[1], s_cam.forward[2]);
 	}
 	if (!ondemand)
 	{
 		int i, match = 0;
-		if (!counting) return NULL;
+		if (!fresh) return NULL;
 		for (i = 0; i < nframes; i++) if (frames[i] == frame) { match = 1; break; }
 		if (!match) return NULL;
 	}
@@ -4976,11 +5235,11 @@ static void rt_dump_fog(const char *outpath, int frame)
 	}
 }
 
-void RT_Metal_DumpFrame(int width, int height, int counting)
+void RT_Metal_DumpFrame(int width, int height, int index)
 {
 	char namebuf[1024];
 	int frame = 0;
-	const char *outpath = rt_dump_decide(width, height, counting, namebuf, sizeof namebuf, &frame);
+	const char *outpath = rt_dump_decide(width, height, index, namebuf, sizeof namebuf, &frame);
 	if (!outpath) return;
 
 	unsigned char *px = (unsigned char *)malloc((size_t)width * height * 4);
@@ -5010,12 +5269,12 @@ void RT_Metal_DumpFrame(int width, int height, int counting)
 // to 8-bit — identically for both ends of any A/B, so still discriminating
 // (the caller prints a one-shot note; vid.edr_active is not visible from
 // this file, deliberately).
-void RT_Metal_DumpFrameMetal(int width, int height, int counting)
+void RT_Metal_DumpFrameMetal(int width, int height, int index)
 {
 	char namebuf[1024];
 	int frame = 0;
 	size_t i, n;
-	const char *outpath = rt_dump_decide(width, height, counting, namebuf, sizeof namebuf, &frame);
+	const char *outpath = rt_dump_decide(width, height, index, namebuf, sizeof namebuf, &frame);
 	if (!outpath) return;
 
 	unsigned char *px = (unsigned char *)malloc((size_t)width * height * 4);
@@ -5604,6 +5863,29 @@ int RT_Metal_Composite(int width, int height, int scenedepthvalid, int vpx, int 
 		//    See metal/async-plan.md.
 		s_cam.w = (uint32_t)tw;
 		s_cam.h = (uint32_t)th;
+		// REVIEW 0.6 (rt_metal_jitter): the raster's jitter in THIS trace's
+		// texels, same-frame only -- async shows last frame's trace under this
+		// frame's jitter, another Halton phase. The ratio is formed first so it
+		// is exactly 1.0f at rt_metal_scale 1. The state line goes to stderr
+		// (the sidecar has no console), change-only.
+		{
+			int jsame = (s_syncMode || s_sameFrame);
+			int jlive = s_jitterWant && jsame && (s_jitterPx[0] != 0.0f || s_jitterPx[1] != 0.0f);
+			if (jlive) { rt_ensure_jitter_pso(); if (!s_jitterPso) jlive = 0; }
+			int jst = !s_jitterWant ? 0 : (jlive ? 2 : 1);
+			float jrx = (float)tw / (float)width, jry = (float)th / (float)height;
+			if (jst != s_jitterState)
+			{
+				s_jitterState = jst;
+				fprintf(stderr, "%s\n", jst == 2 ? "RT jitter armed (the trace follows the raster's TAA sub-pixel jitter)"
+				                       : (jst == 1 ? "RT jitter dormant (needs the Metal renderer, r_metalfx 2 and rt_metal_sameframe 1)"
+				                                   : "RT jitter off"));
+			}
+			s_cam.jitterx = jlive ? s_jitterPx[0] * jrx : 0.0f;
+			s_cam.jittery = jlive ? s_jitterPx[1] * jry : 0.0f;
+			s_cam.pjitterx = s_prevJitter[0];
+			s_cam.pjittery = s_prevJitter[1];
+		}
 		if (!s_lightbuf[curslot]) RT_Metal_SetLights(NULL, 0, 0);   // ensure a bindable buffer exists
 		s_cam.numLights = (uint32_t)s_numlights;
 		s_cam.numDynamic = (uint32_t)s_numdynamic;
@@ -5663,8 +5945,15 @@ int RT_Metal_Composite(int width, int height, int scenedepthvalid, int vpx, int 
 		// while the arm is off) keeps it bound -- the declared-but-unbound trap.
 		if (s_liqrt && !s_liqmtex[0])
 			rt_ensure_liquid_surface(s_w, s_h);
+		// REVIEW 0.1: no pair this slot (refused, failed, or the arm off) = the arm
+		// does not run. Otherwise rt_trace's liqOut.write lands in the stand-in --
+		// the term texture itself -- once aliasing outtex and once past its width.
+		// Byte-exact wherever the pair exists or the arm is off (liqrt is 0 then).
+		if (!s_liqmtex[curslot]) s_cam.liqrt = 0u;
 		id<MTLComputeCommandEncoder> ce = [cb computeCommandEncoder];
-		[ce setComputePipelineState:s_pso];
+		// REVIEW 0.6: the RT_JITTER 1 PSO whenever this trace or the one its history
+		// came from was jittered (the frame after a 1 -> 0 still compensates once)
+		[ce setComputePipelineState:((s_cam.jitterx != 0.0f || s_cam.jittery != 0.0f || s_cam.pjitterx != 0.0f || s_cam.pjittery != 0.0f) && s_jitterPso) ? s_jitterPso : s_pso];
 		[ce setTexture:s_mtex[curslot] atIndex:0];
 		[ce setTexture:s_histTex[s_histParity] atIndex:1];          // read previous-frame history
 		[ce setTexture:s_histTex[s_histParity ^ 1] atIndex:2];      // write this-frame history
@@ -5748,6 +6037,26 @@ int RT_Metal_Composite(int width, int height, int scenedepthvalid, int vpx, int 
 				if (s_noiseTex3D && s_hasFogShade) {
 					int fw = (int)(width  * s_fogScale + 0.5f); if (fw < 1) fw = 1;
 					int fh = (int)(height * s_fogScale + 0.5f); if (fh < 1) fh = 1;
+					// REVIEW 0.1: the froxel volume is fw x fh x slices, and a Metal 3D
+					// texture may not exceed METAL_MAX_TEX3D on any axis -- an oversized
+					// descriptor ABORTS the process (always-on validation; the
+					// 2026-09-18 crashes). While the froxel will run, hold the fog buffer
+					// inside the limit with its aspect kept. Reached only where the old
+					// code aborted: cinematic.cfg on a window over 2048 px, Render Scale
+					// 100% on Ultimate on a 5K display, r_viewscale above ~2.4 at 1080p.
+					// rt_ensure_froxel_pso is idempotent; asking first means a failed
+					// froxel compile keeps its old (2D) buffer size.
+					if (s_froxel) rt_ensure_froxel_pso();
+					if (s_froxel && s_froxelPso && s_froxelIntPso && (fw > METAL_MAX_TEX3D || fh > METAL_MAX_TEX3D)) {
+						static int heldw = -1, heldh = -1;
+						int askw = fw, askh = fh, m = fw > fh ? fw : fh;
+						fw = (int)((long long)fw * METAL_MAX_TEX3D / m); if (fw < 1) fw = 1;
+						fh = (int)((long long)fh * METAL_MAX_TEX3D / m); if (fh < 1) fh = 1;
+						if (fw != heldw || fh != heldh) {
+							heldw = fw; heldh = fh;
+							fprintf(stderr, "RT froxel fog: fog buffer held at %dx%d (a 3D texture may not exceed %d on any axis; the viewport asked for %dx%d)\n", fw, fh, METAL_MAX_TEX3D, askw, askh);
+						}
+					}
 					if (rt_ensure_fog_surface(fw, fh)) {
 						RTFogCam fc;
 						memcpy(fc.origin,  s_cam.origin,  sizeof(float) * 3);
@@ -6155,6 +6464,7 @@ int RT_Metal_Composite(int width, int height, int scenedepthvalid, int vpx, int 
 		memcpy(s_prevRight,   s_cam.right,   sizeof(float) * 3);
 		memcpy(s_prevUp,      s_cam.up,      sizeof(float) * 3);
 		s_prevTanx = s_cam.tanx; s_prevTany = s_cam.tany;
+		s_prevJitter[0] = s_cam.jitterx; s_prevJitter[1] = s_cam.jittery;	// REVIEW 0.6
 		s_hasPrev = 1;
 		s_histParity ^= 1;
 		s_par ^= 1;                  // next frame encodes (and SetEntities fills) the other slot
@@ -6564,6 +6874,7 @@ void RT_Metal_Shutdown(void)
 	s_worldToken = 0;
 	s_hasCam = 0;
 	s_pso = nil;
+	s_jitterPso = nil; s_jitterSrc = nil; s_jitterTried = 0;
 	// dropping the references is right either way; when the device and queue
 	// were handed in by the renderer (RT_Metal_InitWithDevice) they outlive us
 	// and ARC keeps them alive for their real owner.
@@ -6588,6 +6899,7 @@ void RT_Metal_SetFogHistCentre(int enable) { (void)enable; }
 void RT_Metal_SetFogStepJitter(int enable) { (void)enable; }
 void RT_Metal_SetFogFilter(int mode, float depthtol) { (void)mode; (void)depthtol; }
 void RT_Metal_SetTermMax(float knee) { (void)knee; }
+void RT_Metal_SetJitter(int enable, float jx, float jy) { (void)enable; (void)jx; (void)jy; }
 void RT_Metal_SetLightSample(int enable, int rays, float wclamp) { (void)enable; (void)rays; (void)wclamp; }
 void RT_Metal_SetGI(int enable, float dist, float albedo, float history, float intensity, float emissive, int rate, float albtex, int fallback, float tiledilate) { (void)enable; (void)dist; (void)albedo; (void)history; (void)intensity; (void)emissive; (void)rate; (void)albtex; (void)fallback; (void)tiledilate; }
 void RT_Metal_SetGIAO(float ao, float dist) { (void)ao; (void)dist; }
@@ -6623,8 +6935,8 @@ int RT_Metal_GetFogTexture(unsigned int *gltex, int *w, int *h) { (void)gltex;(v
 int RT_Metal_Composite(int width, int height, int scenedepthvalid, int vpx, int vpy, unsigned int depthtexname, const float *screentodepth, float uptol) { (void)width; (void)height; (void)scenedepthvalid; (void)vpx; (void)vpy; (void)depthtexname; (void)screentodepth; (void)uptol; return RT_COMPOSITE_NONE; }
 void RT_Metal_MarkComposited(void) {}
 int RT_Metal_Active(void) { return 0; }
-void RT_Metal_DumpFrame(int width, int height, int counting) { (void)width; (void)height; (void)counting; }
-void RT_Metal_DumpFrameMetal(int width, int height, int counting) { (void)width; (void)height; (void)counting; }
+void RT_Metal_DumpFrame(int width, int height, int index) { (void)width; (void)height; (void)index; }
+void RT_Metal_DumpFrameMetal(int width, int height, int index) { (void)width; (void)height; (void)index; }
 void RT_Metal_ResetTemporal(void) {}
 void RT_Metal_RequestDump(void) {}
 int RT_Metal_GetShownCamera(float f[3], float r[3], float u[3]) { (void)f;(void)r;(void)u; return 0; }

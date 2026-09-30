@@ -253,6 +253,7 @@ void Host_SaveConfig(const char *file)
 		js_syncFS(false);
 #endif
 		FS_Close (f);
+		R_ShaderWarm_Save();   // r_shaderwarm: the permutations this session compiled, beside the config
 	}
 }
 

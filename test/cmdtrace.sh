@@ -126,13 +126,19 @@ EOF
 # batch, on liquid and non-liquid batches alike. It was pinned the day its
 # default became 0.5; before that the bed was riding the default, which is
 # exactly the "a default can move under a bed; a pin cannot" trap one line up.
+# r_dither 0 (REVIEW 0.5) is insurance rather than a fix: the dither lives in
+# the Metal present pass and this bed runs GL, so no value of it can move the
+# digest today -- the pin keeps its default (1 since 2026-09-24, Seb's eye) or a
+# future GL arm from doing so.
+# r_shaderwarm 0: the pre-warm compiles the GL programs at the first R_RenderView, well
+# before the frozen tail; pinned so the digest bed never depends on a warm list's contents.
 DP_CMDTRACE="$LEVEL" DP_CMDTRACE_OUT=cmdtrace.txt \
 "$ROOT/$EXE" -userdir "$SANDBOX" -window -nosound +vid_renderer gl \
 	+vid_width 1280 +vid_height 720 +vid_borderless 1 \
 	+cl_nettimesyncfactor 1 +cl_nettimesyncboundmode 1 +vid_vsync 0 \
 	+r_waterswirl 0 +r_teleportswirl 0 +r_volumetric_liquidfade 0 +r_watersurface 0 \
 	+cl_particles_soft 0 +cl_particles_refract 0 +r_caustics 0 +r_skylightning 0 \
-	+m5_torch_embers 0 +m5_dust 0 \
+	+m5_torch_embers 0 +m5_dust 0 +r_dither 0 +r_shaderwarm 0 \
 	+map "$MAP" +exec cmdtrace.cfg >"$OUT/cmdtrace-run.log" 2>&1
 
 # the banner is the anti-stale-binary check: a build that should be tracing but

@@ -27,7 +27,7 @@ do is check every claim that has a machine-readable shape, and the tier-count
 word check below is a cheap net for the commonest prose rot (a four-tier phrase
 surviving into a six-tier table).
 """
-import glob, io, os, re, subprocess, sys
+import glob, importlib.util, io, os, re, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def P(*a): return os.path.join(ROOT, *a)
@@ -463,7 +463,8 @@ def gen_refconfig(cfgpath, defs):
     pre = ('m5_', 'rt_metal', 'r_volumetric', 'r_metalfx', 'r_lava', 'r_edr', 'r_redglow',
            'r_lightningbeam_m5', 'r_viewscale', 'r_viewfbo', 'r_hdr', 'r_wateralpha',
            'r_brightness', 'r_gamma_analytic', 'r_bloom', 'r_fxaa', 'v_gamma',
-           'v_contrast', 'v_idlesway', 'vid_vsync', 'vid_renderer', 'cl_particles')
+           'v_contrast', 'v_idlesway', 'vid_vsync', 'vid_renderer', 'cl_particles',
+           'r_hud_brightness', 'r_dither', 'r_smaa')   # REVIEW 0.4/0.5 and the AA pass: look cvars off the old prefixes
     rows = []
     for k in sorted(live):
         if not k.startswith(pre): continue
@@ -545,6 +546,12 @@ def main(argv):
     check_upscale_claim(rows, ['SETTINGS.md', 'docs/GUIDE.html', 'docs/MANUAL.html'])
     check_html_balance()
     check_html_balance('docs/MANUAL.html')   # the exact working manual, same net
+    # The recipes the shipped documents name must be in the public download (REVIEW 0.9);
+    # release/make-release.sh runs the same checker against the built packs/m5.
+    spec = importlib.util.spec_from_file_location('cr', P('release', 'check-recipes.py'))
+    cr = importlib.util.module_from_spec(spec); spec.loader.exec_module(cr)
+    for f in cr.check():
+        fail('recipes', f)
     splice(P('SETTINGS.md'), 'tiertable', gen_tier_table(names, rows), refresh)
     if cfg:
         rc = gen_refconfig(cfg, defs)

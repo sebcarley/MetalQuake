@@ -87,7 +87,18 @@ echo "phase $PHASE, filter '$FILTER', rounds $ROUNDS, fullscreen $FS, kernelms $
 # leading '!' on the arm name (perf-report.py drops those rows and says how
 # many). A results.tsv from before this column has the old 14-field header;
 # start a fresh PERF_OUT rather than mixing.
-[ -f "$RESULTS" ] || printf 'ts\tphase\tbed\tarm\tround\tframes\tseconds\tfps\tmin1s\tavg1s\tmax1s\ttrace_ms\tfog_ms\tshaft_ms\tvidmode\n' > "$RESULTS"
+#
+# The ft_* columns (2026-09-24, REVIEW 0.8) are the benchmark line's frame-time
+# distribution: p50 p95 p99 p99.9 max in ms, then the frames over twice the
+# median and over 33 ms. The one-second minimum averages a DEMO second, some
+# seventy frames, so a 50 ms stall is a ~6% dip there and plain here. Rows from
+# a binary before the field carry seven dashes. A results.tsv with the older
+# 15-column header reads the 22-field rows harmlessly (every reader keys on
+# names or truncates), but start a fresh PERF_OUT rather than mixing. Every run
+# is a fresh process: a permutation the Metal compiler has never seen compiles
+# mid-demo and lands in max and p99.9 (METAL_HITCH=2 names it), so never A/B
+# arms on max.
+[ -f "$RESULTS" ] || printf 'ts\tphase\tbed\tarm\tround\tframes\tseconds\tfps\tmin1s\tavg1s\tmax1s\ttrace_ms\tfog_ms\tshaft_ms\tvidmode\tft_p50\tft_p95\tft_p99\tft_p999\tft_max\tft_over2x\tft_over33\n' > "$RESULTS"
 
 # --- collect matching rows ----------------------------------------------------
 ARMFILE=$(mktemp)
@@ -140,6 +151,12 @@ run_one() {
 	seconds=$(echo "$RES" | sed -n 's/.*frames \([0-9.]*\) seconds.*/\1/p')
 	fps=$(echo "$RES"     | sed -n 's/.*seconds \([0-9.]*\) fps.*/\1/p')
 	mam=$(echo "$RES"     | sed -n 's/.*min\/avg\/max: \([0-9]*\) \([0-9]*\) \([0-9]*\).*/\1 \2 \3/p')
+	ft=$(echo "$RES"      | sed -n 's/.*| ft p50 \([0-9.]*\) p95 \([0-9.]*\) p99 \([0-9.]*\) p99\.9 \([0-9.]*\) max \([0-9.]*\) ms, >2x median \([0-9]*\), >33ms \([0-9]*\).*/\1 \2 \3 \4 \5 \6 \7/p')
+	# EXPLICIT defaults, not ${x:-"- - -"}: /bin/sh keeps a quoted default as ONE
+	# field (measured, bash 3.2.57), which writes a short row perf-report.py
+	# silently drops. The old ${mam:-"- - -"} had exactly that latent bug.
+	[ -n "$ft" ] || ft="- - - - - - -"
+	[ -n "$mam" ] || mam="- - -"
 	# stage ms: average every RT_Metal-kern line the run printed
 	tms=""; fms=""; sms=""
 	if [ "${PERF_KERNELMS:-0}" = "1" ]; then
@@ -160,10 +177,10 @@ run_one() {
 			*) echo "  WARNING: $arm [$tag] ran at '${vm:-?}' -- the 1920x1017 class; row flagged with '!'"; armrec="!$arm" ;;
 		esac
 	fi
-	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
 		"$(date +%H:%M:%S)" "$PHASE" "$bed" "$armrec" "$tag" \
-		"$frames" "$seconds" "$fps" ${mam:-"- - -"} "${tms:--}" "${fms:--}" "${sms:--}" "${vm:--}" >> "$RESULTS"
-	echo "  $arm [$tag]: $fps fps (1s min/avg/max $mam)${tms:+  stages t=$tms f=$fms s=$sms}  [$vm]"
+		"$frames" "$seconds" "$fps" $mam "${tms:--}" "${fms:--}" "${sms:--}" "${vm:--}" $ft >> "$RESULTS"
+	echo "  $arm [$tag]: $fps fps (1s min/avg/max $mam)${tms:+  stages t=$tms f=$fms s=$sms}  [$vm]  ft p50/p95/p99/p99.9/max, >2x, >33ms: $ft"
 	rm -f "$LOG"; rm -rf "$SB"
 }
 

@@ -204,6 +204,13 @@ writecfg() { # backend vantage tag
 		# thirty-five vantages' recorded numbers valid, and same-frame keeps
 		# its own coverage via PARITY_EXTRA='rt_metal_sameframe 1' (8-2).
 		echo 'rt_metal_sameframe 0'
+		# rt_metal_jitter 0, PINNED the day its DEFAULT moved to 1 (2026-09-24 evening,
+		# Seb's eye). The jitter needs rt_metal_sameframe 1, so the sameframe pin above
+		# already keeps it dormant here; the pin STATES it, because a default can move
+		# under a bed and a pin cannot. It cannot be crossed between backends anyway: the
+		# raster jitter is MetalFX's, so GL's term is never jittered. Feature-on coverage
+		# is Metal-against-itself, PARITY_EXTRA='rt_metal_sameframe 1' + 'rt_metal_jitter 1'.
+		echo 'rt_metal_jitter 0'
 		echo 'vid_vsync 0'
 		# rt_metal_lightsample 0, PINNED (2026-08-28, the FOGLIGHT default flip).
 		# The fog-only stochastic pick defaults 1 now and moves ~95% of a murk
@@ -277,6 +284,16 @@ writecfg() { # backend vantage tag
 		# coverage is PARITY_EXTRA='rt_metal_lightcap 0.75' (one shared sidecar,
 		# so both backends move together).
 		echo 'rt_metal_lightcap 0'
+		# rt_metal_fixturelights 0, PINNED from the day it existed (2026-09-28, VKRT
+		# slice 3): it appends lamp-face lights to the static pool, so every rt_*
+		# baseline would move the moment its default did. Coverage is
+		# PARITY_EXTRA='rt_metal_fixturelights 1' (one shared sidecar).
+		echo 'rt_metal_fixturelights 0'
+		# rt_metal_shadowlights_smooth 0, PINNED from the day it existed (2026-09-29): it
+		# is a PREPROCESSOR variant of rt_trace, and at 1 the kernel's text differs even
+		# where rt_metal_shadowlights is pinned 1 below -- the REVIEW 0.6 lesson is that
+		# new text reschedules the old under fast math. At 0 the text is the old kernel's.
+		echo 'rt_metal_shadowlights_smooth 0'
 		# rt_metal_shadowlights 1, PINNED the day its DEFAULT moved to 3 (2026-09-19,
 		# THE ROUND SPOTLIGHTS). Past 1 the kernel shadow-tests the next brightest
 		# lights as well as the dominant, which removes light that every recorded rt_*
@@ -285,6 +302,22 @@ writecfg() { # backend vantage tag
 		# Feature-on coverage is PARITY_EXTRA='rt_metal_shadowlights 3' (one shared
 		# sidecar, so both backends move together).
 		echo 'rt_metal_shadowlights 1'
+		# rt_metal_lightrank 0, PINNED from the day it exists (REVIEW 0.7, 2026-09-24).
+		# The e1m3/e1m2/e1m7/e4m7 vantages sit at 35-190 lights in range, under the
+		# kernels' 256, where both values give the same bytes; rt_sun is why the pin
+		# is needed -- AD's start hub has 213 map lights in range at its spawn plus
+		# its lava lights, close enough to the cap that its recorded frames are not
+		# safe. Feature-on coverage is PARITY_EXTRA='rt_metal_lightrank 1'.
+		echo 'rt_metal_lightrank 0'
+		# r_dither 0, PINNED from the day it exists (REVIEW 0.5, 2026-09-24). The
+		# dither is Metal-only -- it lives in the present pass and in the screen's
+		# readback -- so a live one moves every Metal frame by up to a level and no
+		# GL frame at all, and the cross would measure the grain rather than the
+		# port. The default became 1 on 2026-09-24 (evening, Seb's eye), so the pin is
+		# what keeps every recorded Metal baseline byte-exact.
+		# Feature-on coverage is Metal-against-itself: PARITY_EXTRA='r_dither 1'
+		# and the two Metal boots must still agree byte for byte (the grain is static).
+		echo 'r_dither 0'
 		# rt_metal_fog_froxel 0, PINNED the day its DEFAULT moved to 1 (2026-09-07,
 		# Seb's eye): the froxel is a different fog integral (48 fixed cells, a
 		# per-cell history), so murk_kernel / murk_shafts would re-baseline.
@@ -300,6 +333,11 @@ writecfg() { # backend vantage tag
 		# coverage is PARITY_EXTRA='r_watersurface 1' (measured 2026-09-13: both arms move
 		# together to the pixel, 38.10% at 4.0191 on each backend at murk_liquid).
 		echo 'r_watersurface 0'
+		# m5_lumacalibrate 0, PINNED the day it shipped at 1 (2026-09-28, Seb's eye): it
+		# rescales the QRP pack's glow layers at load, so any vantage with a lamp or a
+		# slipgate texture in frame would re-baseline. Coverage is
+		# PARITY_EXTRA='m5_lumacalibrate 1' (a load-time texture change, both backends).
+		echo 'm5_lumacalibrate 0'
 		# rt_metal_fog_residual 0.25, PINNED the day its DEFAULT moved to 0.1 (2026-09-06
 		# evening, Seb's "sharp1" verdict): the fill is a term in the fog kernel's light
 		# sum, so every recorded murk_kernel / murk_shafts baseline was captured at 0.25.

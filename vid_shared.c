@@ -211,7 +211,7 @@ extern cvar_t m5_stock;   // r_shadow.c -- STOCK MODE, the 1996 read-side master
 cvar_t m5_packbrightness = {CF_CLIENT | CF_ARCHIVE, "m5_packbrightness", "1", "per-mission-pack brightness trim, multiplied into the r_brightness curve. 1 = no change. Never applies in stock Quake, which is the reference. Set by the m5pack_<gamedir>.cfg look files"};
 cvar_t r_brightness = {CF_CLIENT | CF_ARCHIVE, "r_brightness", "0.5", "master brightness, 0-1. 0.5 = the stock 1996 look (and exactly no change); 0.25 = moody but playable; 0.15 = very dark and gloomy; 0 = nearly unplayable, inky black. Above 0.5 lifts the midtones. Scales the gamma curve, so it dims the whole composited frame -- fog included -- rather than the scene lighting alone"};
 cvar_t v_gamma = {CF_CLIENT | CF_ARCHIVE, "v_gamma", "1", "inverse gamma correction value, a brightness effect that does not affect white or black, and tends to make the image grey and dull. Composes with r_brightness, which is the master"};
-cvar_t v_contrast = {CF_CLIENT | CF_ARCHIVE, "v_contrast", "1", "brightness of white (values above 1 give a brighter image with increased color saturation, unlike v_gamma)"};
+cvar_t v_contrast = {CF_CLIENT | CF_ARCHIVE, "v_contrast", "1", "brightness of white (values above 1 give a brighter image with increased color saturation, unlike v_gamma); with r_hdr_shoulder and r_hdr_displayfit 1 on, the brightest highlights are rolled up to display white whatever this is"};
 cvar_t v_brightness = {CF_CLIENT | CF_ARCHIVE, "v_brightness", "0", "brightness of black, useful for monitors that are too dark"};
 cvar_t v_contrastboost = {CF_CLIENT | CF_ARCHIVE, "v_contrastboost", "1", "by how much to multiply the contrast in dark areas (1 is no change)"};
 cvar_t v_color_enable = {CF_CLIENT | CF_ARCHIVE, "v_color_enable", "0", "enables black-grey-white color correction curve controls"};
@@ -1280,6 +1280,20 @@ qbool VID_GetGammaAnalytic(float invgamma[3], float scale[3], float base[3], flo
 	return true;
 }
 
+// REVIEW 0.3 (2026-09-24). NSScreen reports EDR headroom in LINEAR light, and
+// the postprocess writes DISPLAY-ENCODED values into a layer tagged extended
+// sRGB, whose power segment Apple continues past 1.0 -- so the most an encoded
+// value can usefully reach is the headroom run through the sRGB OETF. The <= 1
+// guard is load-bearing, not tidiness: in float, 1.055f*1 - 0.055f is
+// 0.99999994f, and a ceiling one ulp under 1.0 would move pixels at every
+// configuration that has no headroom at all.
+float VID_EDREncode(float linear)
+{
+	if (!(linear > 1.0f))
+		return 1.0f;
+	return Image_sRGBFloatFromLinearFloat(linear);
+}
+
 unsigned int vid_gammatables_serial = 0; // so other subsystems can poll if gamma parameters have changed
 qbool vid_gammatables_trivial = true;
 void VID_BuildGammaTables(unsigned short *ramps, int rampsize)
@@ -1456,6 +1470,7 @@ void VID_Shared_Init(void)
 	// floor it at 1.0 themselves, but a value that is only ever correct because
 	// two shaders repair it is not a value anybody should have to trace.
 	vid.edr_headroom = 1.0f;
+	vid.edr_ceiling = 1.0f;	// REVIEW 0.3: the same floor, for the same reason
 
 	Cvar_RegisterVariable(&gl_info_vendor);
 	Cvar_RegisterVariable(&gl_info_renderer);

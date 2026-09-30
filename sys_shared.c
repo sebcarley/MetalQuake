@@ -497,6 +497,58 @@ double Sys_DirtyTime(void)
 #endif
 }
 
+/*
+================
+METAL_HITCH (2026-09-24)
+
+The first-use stall reporter. Everything the renderer does once,
+synchronously, on the frame that first needs it -- an MSL compile, a
+reflection or render pipeline, a ray-tracing kernel or acceleration
+structure, a MetalFX scaler, a bake, a froxel volume -- is timed at its call
+site and reported on stderr when it took at least METAL_HITCH milliseconds.
+Unset, 0 or negative is off, like every other env instrument in the tree;
+0.001 reports every event, a census. An environment variable, like every
+verification aid here, so it can never be archived. Off, each site pays one
+cached test.
+================
+*/
+static int sys_hitch_state = -1;	// -1 unread, 0 off, 1 on
+static double sys_hitch_threshold;	// milliseconds
+
+static qbool Sys_HitchOn(void)
+{
+	if (sys_hitch_state < 0)
+	{
+		const char *e = getenv("METAL_HITCH");
+		sys_hitch_threshold = e ? atof(e) : 0;
+		sys_hitch_state = sys_hitch_threshold > 0 ? 1 : 0;
+	}
+	return sys_hitch_state == 1;
+}
+
+double Sys_HitchStart(void)
+{
+	return Sys_HitchOn() ? Sys_DirtyTime() : 0;
+}
+
+void Sys_HitchReport(double t0, const char *what, const char *fmt, ...)
+{
+	va_list argptr;
+	char detail[256];
+	double ms;
+
+	if (!Sys_HitchOn())
+		return;
+	ms = (Sys_DirtyTime() - t0) * 1000.0;
+	if (ms < sys_hitch_threshold)
+		return;
+	va_start(argptr, fmt);
+	dpvsnprintf(detail, sizeof(detail), fmt, argptr);
+	va_end(argptr);
+	// ONE write per line, so a sidecar print cannot land inside it
+	fprintf(stderr, "HITCH %s %.2f ms frame %u %s\n", what, ms, host.framecount, detail);
+}
+
 double Sys_Sleep(double time)
 {
 	double dt;

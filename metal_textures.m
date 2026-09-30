@@ -456,9 +456,17 @@ int Metal_Texture_Create(int textype, int width, int height, int depth, int side
 		// encode refuses and the frame falls back SILENTLY to a correct but
 		// un-antialiased path. Both are 0 when MetalFX is unavailable, so this is
 		// the old value exactly on any machine without it.
-		td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead
-		         | (MTLTextureUsage)MetalFX_OutputTextureUsage()
-		         | (MTLTextureUsage)MetalFX_TemporalOutputTextureUsage();
+		//
+		// COLOUR targets only (REVIEW 0.1, 2026-09-24): a depth target is never a
+		// scaler destination (the temporal depth INPUT asks ShaderRead alone,
+		// which the base usage has), and ShaderWrite on Depth32Float is accepted
+		// on this M5 but undocumented on other Apple GPU families -- where the
+		// always-on descriptor validation could abort at the first offscreen
+		// frame. Usage bits do not alter rendered values.
+		td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+		if (pf != MTLPixelFormatDepth32Float)
+			td.usage |= (MTLTextureUsage)MetalFX_OutputTextureUsage()
+			          | (MTLTextureUsage)MetalFX_TemporalOutputTextureUsage();
 		td.storageMode = MTLStorageModePrivate;
 	}
 	else

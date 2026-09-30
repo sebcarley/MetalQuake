@@ -400,7 +400,14 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   red, an aura at arm's length rather than a lamp on a pole. Quake marks its dangers in red
   — the bands on an Ogre's grenade, the buttons, the cross on a health box — and red is
   allowed to burn, texel by texel, while brick and dried blood stay as dead as they
-  should.</p>
+  should. The gates between worlds carry their own light too, red strips and pulsing
+  panels that were painted to burn and had been dimmed in the copying; they burn again at
+  the strength they were painted. And the lamps themselves give light from their own faces
+  rather than from a point beneath them, so a ceiling lamp lights the ceiling it hangs from
+  and the air below it, and a red button glows on the wall it is set in; the red strips set into the trim of the
+  older halls glow, faintly, on the stone beside them. In the greatest halls more lamps burn within reach than the light can carry at
+  once, and it carries the ones that fill the space around you, letting the faint and the
+  distant go.</p>
   <p>The sky is open sky, so a shaft of light crosses a skylight as it should, and under an
   open sky the storm is let in: a cold flash from above that throws every wall's shadow at
   once, a second stutter of it, and the thunder arriving a breath later from that quarter of
@@ -424,12 +431,17 @@ console, for anyone who would reach further in; it can be passed over entirely.<
       <tr><td><code>rt_metal_gi</code></td><td>the single bounce; <code>_emissive</code> the lava's share, <code>_albedo_tex</code> the colour the walls lend it</td></tr>
       <tr><td><code>rt_metal_gi_ao</code></td><td>the corners' dark (<code>exec gi_ao_off.cfg</code> / <code>gi_ao_on.cfg</code>)</td></tr>
       <tr><td><code>rt_metal_contact</code></td><td>shadows that harden at the foot (<code>exec contact_off.cfg</code> / <code>contact_on.cfg</code>)</td></tr>
-      <tr><td><code>rt_metal_shadowlights</code></td><td>0 keeps every lamp behind its walls; 1 lets them shine through again (<code>exec spotfix_on.cfg</code> / <code>spotfix_off.cfg</code>)</td></tr>
+      <tr><td><code>rt_metal_shadowlights</code></td><td>how many of the brightest lamps at each point are kept behind their walls, 3 by default; 1 lets all but the brightest shine through again (<code>exec spotfix_on.cfg</code> / <code>spotfix_off.cfg</code>)</td></tr>
+      <tr><td><code>rt_metal_lightrank</code></td><td>which lamps the light carries when more burn in reach than it can hold; 0 takes the first in the map's own order</td></tr>
+      <tr><td><code>rt_metal_fixturelights</code></td><td>the lamps giving light from their own faces, at half strength (<code>exec fixturelights_off.cfg</code> / <code>fixturelights.cfg</code> / <code>fixturelights2.cfg</code>)</td></tr>
+      <tr><td><code>rt_metal_shadowlights_smooth</code></td><td>the lesser lamps' shadows settled rather than woven (<code>exec meshfix_off.cfg</code> / <code>meshfix_on.cfg</code>)</td></tr>
       <tr><td><code>rt_metal_ambient</code></td><td>the last sourceless fill; 0 for dead blacks</td></tr>
       <tr><td><code>rt_metal_glowpass</code></td><td>runes, lamp faces and lit panels keep their own light</td></tr>
       <tr><td><code>rt_metal_viewmodel</code></td><td>the weapon lit by the room</td></tr>
+      <tr><td><code>rt_metal_jitter</code></td><td>the traced light trembles with the picture under the temporal mode; on by default, and <code>exec rtjitter_off.cfg</code> holds it still</td></tr>
       <tr><td><code>m5_powerupglow</code></td><td>the Quad's blue and the Pentagram's red aura; 0 for the plain white lamp (<code>exec quadglow_off.cfg</code> / <code>quadglow_on.cfg</code>)</td></tr>
       <tr><td><code>r_redglow</code></td><td>red texels allowed to burn</td></tr>
+      <tr><td><code>m5_lumacalibrate</code></td><td>the gates’ own light at its painted strength (<code>exec luma_off.cfg</code> / <code>luma_soft.cfg</code> / <code>luma_on.cfg</code>; takes effect on the next map)</td></tr>
       <tr><td><code>rt_metal_skyopen</code></td><td>the sky as open sky</td></tr>
       <tr><td><code>r_skylightning</code></td><td>the storm; <code>r_skylightning_fog</code> how much of a flash reaches the air (<code>exec skylightning_off.cfg</code> / <code>_on.cfg</code>)</td></tr>
       <tr><td><code>m5_torch_embers</code></td><td>embers off the flames (<code>exec embers_off.cfg</code> / <code>embers_on.cfg</code>)</td></tr>
@@ -490,7 +502,7 @@ console, for anyone who would reach further in; it can be passed over entirely.<
       <tr><td><code>r_volumetric_ground</code> <code>_groundheight</code></td><td>the floor layer and how deep it lies</td></tr>
       <tr><td><code>r_volumetric_ambient</code></td><td>the level's light in the fog; <code>_ambientgain</code> its strength, <code>_ambientdilate</code> the wall fill</td></tr>
       <tr><td><code>rt_metal_fog</code></td><td>the fog lit per step</td></tr>
-      <tr><td><code>rt_metal_lightsample</code></td><td>every light's shadow in the fog</td></tr>
+      <tr><td><code>rt_metal_lightsample</code></td><td>every light's shadow in the fog, off as shipped for the grain it brings (<code>exec fizz_back.cfg</code> / <code>fizz_pick_off.cfg</code>)</td></tr>
       <tr><td><code>rt_metal_fog_froxel</code></td><td>the fog held in three dimensions</td></tr>
       <tr><td><code>m5_dust 256</code></td><td>the ash; <code>cl_particles_lighting 2</code> lights it, <code>cl_particles_lighting_static</code> sets how much the room lights it without touching what a muzzle flash does</td></tr>
       <tr><td><code>r_volumetric_probe</code></td><td>what the fog sees where you stand</td></tr>
@@ -519,6 +531,15 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   you are under: a shallow pool shows you its bottom, a deep one shows you nothing, and you
   do not learn which kind you are looking at until you are in it.</p>
 
+  <p>The room lies in the water. What the eye can see above the surface lies upon it
+  inverted: the lamp with its glow,
+  the torch, the bolt in flight, each broken and remade by the ripple, faint when you look
+  down into the water and stronger the further along it you look, as a mirror keeps its
+  own law. What the eye cannot see, the water cannot show; the ceiling straight above you
+  is not there. Asked further, the water gives up its floor&rsquo;s light for its own and
+  goes a shade darker, and fills in what the eye could not see with a plainer image of the
+  room, which is never a picture.</p>
+
   <h3>The waterline</h3>
   <p>A band of mist lies along the water. The fog settles onto a lake as it settles onto a
   floor, level from shore to shore, so a lakeside at night is a cave mouth, a mist lying on
@@ -546,6 +567,9 @@ console, for anyone who would reach further in; it can be passed over entirely.<
       <tr><td><code>r_volumetric_slimedensity</code> <code>_lavadensity</code></td><td>the same for slime and lava</td></tr>
       <tr><td><code>r_volumetric_watermist</code> <code>_mistheight</code></td><td>the band along the waterline and how high it lies</td></tr>
       <tr><td><code>rt_metal_liquids</code></td><td>the room's light on the surface</td></tr>
+      <tr><td><code>r_watersurface_reflect</code></td><td>what the eye sees, mirrored in the water (<code>exec watersurface_reflect.cfg</code> / <code>watersurface_reflect2.cfg</code> / <code>watersurface_reflect4.cfg</code>; <code>watersurface_on.cfg</code> reverts)</td></tr>
+      <tr><td><code>rt_metal_liquids_reflect_under</code></td><td>how much of the mirror remains when the surface is seen from beneath (<code>exec underreflect_off.cfg</code> / <code>underreflect_on.cfg</code> / <code>underreflect_full.cfg</code>)</td></tr>
+      <tr><td><code>rt_metal_liquids_ripple</code></td><td>the plainer image of the room behind it, broken by the ripple (<code>exec watersurface_reflect_pair.cfg</code> / <code>liquid_rt_off.cfg</code>)</td></tr>
       <tr><td><code>rt_metal_fog_liquidlight</code></td><td>the fog's light carried under the surface (<code>exec fog_liquidlight_off.cfg</code> / <code>_on.cfg</code>)</td></tr>
       <tr><td><code>r_caustics</code></td><td>the net of light on the pool floor (<code>exec caustics_off.cfg</code> / <code>caustics_on.cfg</code>)</td></tr>
     </table>
@@ -748,6 +772,26 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   picture rather than only the lighting, so the fog goes dark with the rooms instead of
   glowing on its own.</p>
 
+  <h3>The steps in the dark</h3>
+  <p>A screen that holds only eight bits to a colour — every screen not running in HDR, and
+  every screenshot and recording — has few steps to spend at the bottom of the curve, and the
+  deepest gradients break on them: a slope of shadow becomes a staircase, a pillar lit only by
+  what the room gives back becomes one flat shade. A fine grain, fixed to the glass and finer
+  than any single step, can be laid over the picture at the very last moment, so the stair
+  dissolves and the dark falls away smoothly again. True black stays black. It waits at the
+  console.</p>
+
+  <h3>What is written over the glass</h3>
+  <p>The status bar, the crosshair and the words that pass across the top of the screen are
+  laid over the picture after its darkness has been decided, so in a hall one torch barely
+  holds they can be the brightest things in it. They have a dimmer of their own, beneath the
+  Brightness slider. The menus and the console keep their full white, so the page it is
+  turned from never dims with it.</p>
+  <p>Some glass remembers. An OLED panel shown one bright shape in one place, hour after
+  hour, keeps its ghost, and in this game that shape is the status bar: it never moves, and
+  on a dark screen nothing outshines it. On such a display dim it, or press = until the bar
+  falls away. The menus and the console come and go, and leave nothing behind.</p>
+
   <h3>The breath behind the eye</h3>
   <p>Stand still for a second or two and the view begins to drift — the slow wander the
   end-of-level camera has always had, as though the thing behind the eye were breathing.
@@ -757,20 +801,28 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   <h3>The light off the leash</h3>
   <p>On a display running in macOS HDR mode, a muzzle flash, a lava pool or the core of a
   bolt can be put on the screen brighter than white — brighter than the HUD's digits, which
-  stay at ordinary white on purpose, so the two side by side in one frame are the proof. One
+  stay at ordinary white on purpose while they are left undimmed, so the two side by side in one frame are the proof. One
   switch does all of it. No screenshot can show it; it has to be judged on the glass.</p>
   <p>The glow around such a thing can be a glow rather than a smear: a bloom that keeps the
   core hot and lets the light fall away from it across the room, the way a flame reads in a
   dark hall. It waits at the console.</p>
+  <p>And the brightest of it can be eased up to exactly the most the glass can hold — full
+  white on an ordinary screen, whatever you have done to the darks — rather than piled
+  against a ceiling it cannot see. That waits at the console too.</p>
 
   <div class="console">
     <span class="kicker">At the console &middot; Options → Brightness and Gamma · Video Options</span>
     <table>
       <tr><td><code>r_brightness</code></td><td>the slider; 0.5 is 1996</td></tr>
+      <tr><td><code>r_hud_brightness</code></td><td>the status bar, crosshair and messages; 1 is full white, and the menus and console never dim</td></tr>
+      <tr><td><code>r_shaderwarm</code></td><td>the shaders are learned during the first load rather than met one by one in play; <code>0</code> leaves them to be met</td></tr>
+      <tr><td><code>r_dither</code></td><td>the grain that melts the steps in the darkest gradients — on an ordinary (non-HDR) screen, and in screenshots and recordings; on by default, Metal only; <code>0</code> takes it away</td></tr>
+      <tr><td><code>viewsize 110</code> <code>viewsize 120</code></td><td>the inventory row gone; the whole bar gone, kinder to an OLED</td></tr>
       <tr><td><code>rt_metal_ambient</code></td><td>the last flat fill holding the blacks up; 0 for dead blacks</td></tr>
       <tr><td><code>v_idlesway</code></td><td>the drift</td></tr>
       <tr><td><code>r_edr 1</code></td><td>HDR — the HDR (EDR) row on Video Options; <code>r_hdr_shoulder 0.75</code> rolls the brightest parts into the new range; <code>r_edr_report</code> says what the display is giving you</td></tr>
       <tr><td><code>r_bloom_m5 1</code></td><td>the bloom (<code>exec bloom_m5_on.cfg</code>); <code>_threshold</code> <code>_knee</code> <code>_intensity</code> <code>_levels</code> shape it</td></tr>
+      <tr><td><code>r_hdr_displayfit 1</code></td><td>eases the brightest light up to exactly what the display can show after the gamma curve (<code>exec hdrfit_on.cfg</code>); 0 aims the roll-off at scene white instead</td></tr>
     </table>
   </div>
 </section>
@@ -816,7 +868,7 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   <p class="epigraph">The machine has a temperature and a mood. These numbers were taken
   when it had settled into both.</p>
 
-  <p class="lede">One control, <strong>Options → M5 Quality</strong>, sets thirty-four things
+  <p class="lede">One control, <strong>Options → M5 Quality</strong>, sets thirty-seven things
   at once and runs from a faithful 1996 to the full murk, with every light shadowed in the
   fog and every edge filed clean. Every tier but the first assembles the picture at a little
   over a third of its shown size, traces the light at that same size, and files the edges
@@ -845,7 +897,9 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   <p class="note">Six of the seven tiers render the scene smaller than the window and hand
   the scaling to Apple's MetalFX, which brings the stonework back that plain scaling would
   soften; the top three use its temporal mode, which accumulates frames and is what stops
-  fog and shadows crawling. The worst-second figures are set by the game's own heavy moments
+  fog and shadows crawling. The traced light may be made to tremble in step with the picture
+  it falls on, the same fraction of a pixel each frame, so that the gathering of frames files
+  the rims of shadow as finely as the stone. The worst-second figures are set by the game's own heavy moments
   as much as by the tier; on the busiest map, with everything switched off, the worst second
   still only reaches 176. A cold machine runs a third faster for its first few minutes and
   then settles; these are the settled numbers.</p>
@@ -886,7 +940,8 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   the bounce; the fog in motion; the lava; the thunderbolt and the ball; the water; the
   lake; the sound; and a finale of four action demos each run twice, once at Stock and once
   at Best, with the frame rate left on screen. No hands on the keys, and it puts your
-  settings back when it is done.</p>
+  settings back when it is done. It needs the demos it was built from, and those were
+  recorded here: the download does not carry them.</p>
 
   <h3>The cinematic capture</h3>
   <p>The capture does not run in real time. The engine advances the demo a fixed sixtieth of
@@ -894,12 +949,18 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   any tier — native resolution, thirty-two shadow rays a pixel, the fog on a native buffer
   with a shadow cast at every step — and the result is the same every time it is run.</p>
 
+  <h3>The stopwatch</h3>
+  <p>A timed run keeps a second ledger beside its frame rate: not how fast the frames came
+  but how evenly, with the worst of them counted, because one frame that hangs is felt in
+  the hand long before it shows in any average.</p>
+
   <div class="console">
     <span class="kicker">At the console</span>
     <table>
-      <tr><td><code>exec showreel.cfg</code></td><td>the showreel, on Metal, sound on</td></tr>
+      <tr><td><code>exec showreel.cfg</code></td><td>the showreel, on Metal, sound on; it needs its own demos, which the download does not carry</td></tr>
       <tr><td><code>exec cinematic.cfg</code></td><td>then <code>playdemo &lt;name&gt;</code>, then <code>cl_capturevideo 1</code>, in that order; the file lands in <code>m5/video/</code> as an uncompressed AVI (about 180 MB a second at 1080p60 — keep it short, or set <code>cl_capturevideo_width 1280</code>); <code>exec cinematic_off.cfg</code> before you quit</td></tr>
       <tr><td><code>record &lt;name&gt;</code></td><td>your own demo; <code>playdemo</code> and <code>timedemo</code> play it</td></tr>
+      <tr><td><code>timedemo &lt;name&gt;</code></td><td>plays it as fast as the machine allows; <code>benchmark.log</code> in your <code>m5</code> folder keeps the frame rate and how evenly the frames came, and <code>developer 1</code> prints both</td></tr>
     </table>
   </div>
 </section>
@@ -912,7 +973,9 @@ console, for anyone who would reach further in; it can be passed over entirely.<
   other.</p>
 
   <p class="lede">The app and a <code>packs</code> folder, side by side, in any folder you
-  like. Nothing else needs installing.</p>
+  like. Nothing else needs installing. The first time it runs it lingers a little longer at
+  its first loading, learning its own shaders; every launch after is quicker, and nothing
+  stutters when a thing is first seen.</p>
 
   <h3>The two pieces</h3>
 <pre><code>MetalQuake.app
@@ -930,23 +993,23 @@ packs/hipnotic/   … and rogue, dopa, mg1, ad</code></pre>
   fetch that pack yourself and drop its models in beside the others.</p>
 
   <h3>First launch on a new Mac</h3>
-  <p>Before anything else, once: open Terminal, paste <code>xattr -dr com.apple.quarantine
-  </code> (with the trailing space), drag the MetalQuake app onto the Terminal window, press
-  Enter. Until that is done, macOS's quarantine either refuses to open the app or runs a
-  hidden copy of it from a temporary folder, where it cannot see <code>packs</code> beside
-  it and says so on its own error screen.</p>
+  <p>The app is signed and vouched for by Apple, so the first time it only asks whether to
+  open something that came from the internet. Open it; nothing else is needed. Should it
+  ever insist the game's files are missing while <code>packs</code> sits beside it, its own
+  error screen gives the one Terminal line that lifts the quarantine.</p>
 
   <h3>Settings</h3>
-  <p>A settings file travels in the packs, and a Mac that has never run the game adopts it.
-  On quitting, the game writes that Mac's own settings to its home folder, and from then on
-  the shipped copy is a starting point, not a lock. Screen settings live there too — it asks
-  for 1920×1080 exclusive fullscreen — so on a display that differs, set the resolution again
-  in Options → Video.</p>
+  <p>A settings file travels in the packs, and a Mac that has never run the game adopts it:
+  the Best tier and the reference look, and nothing that belongs to one player — no keys, no
+  screen size, no volumes, and the game's extras left as the engine leaves them. On quitting,
+  the game writes that Mac's own settings to its home folder, and from then on the shipped
+  copy is a starting point, not a lock; delete your own copy to return to it.</p>
 
   <div class="console">
     <span class="kicker">At the console</span>
     <table>
       <tr><td><code>~/Library/Application Support/darkplaces/m5/config.cfg</code></td><td>your settings (Finder: Shift-Command-G, paste the path); quit the game before copying it anywhere, as it rewrites the file on exit</td></tr>
+      <tr><td><code>packs/m5/config.cfg</code></td><td>the settings a new Mac starts from: the Best tier and the reference look, the extras as the engine ships them</td></tr>
       <tr><td><code>packs/m5/progs/</code></td><td>the rest of the models: <a href="https://github.com/NightFright2k19/quake_authmdl/releases">Authentic Model Improvements r26</a>, the <code>.mdl</code> files from its <code>id1/progs</code> — never its <code>progs.dat</code></td></tr>
     </table>
   </div>
@@ -961,7 +1024,7 @@ packs/hipnotic/   … and rogue, dopa, mg1, ad</code></pre>
 
   <p>The ray tracer composites over a rasterised frame; it is not a path tracer. Light
   bounces once. A second bounce, caustics from lamps, and mirrors are outside what it does.
-  The water refracts and does not reflect — the room is never in it. The sun is an option,
+  The water refracts, and reflects the room. The sun is an option,
   and the fog beneath it takes no daylight. The fog's map of the level is coarse, so a ledge
   narrower than a few feet can be missed. The plasma globe is drawn as a sphere on the Metal
   renderer only.</p>

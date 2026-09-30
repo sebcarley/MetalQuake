@@ -430,6 +430,52 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     layering shadows over Quake's baked lightmaps. Rooms gain real directionality
     and every shadow belongs to a light you can find.</dd>
 
+    <dt>rt_metal_shadowlights_smooth</dt>
+    <dd>The chainmail. You saw &ldquo;a slight screen door/moire/chainmail type pattern on
+    certain lit textures&rdquo;. It was the lights shadow-tested past the brightest one:
+    they spent two rays each on a fixed woven dither, which stood still in every soft
+    shadow edge and was magnified by the upscaler. The three shadow-tested lights now rotate
+    their rays every frame and share one shadow, averaged over about five frames, so it
+    no longer matters which of them is the brightest at a given spot. The first version
+    smoothed only the lesser two and left a ring where the brightest light changes; you
+    caught it at e1m5&rsquo;s entrance within seconds, and the second version is the one
+    you passed (&ldquo;Run J does it for me&rdquo;). On your demomesh frames the grain
+    that stands still fell from 6.2% of the light&rsquo;s level to 1.6% on the torch wall
+    and from 2.3% to 1.0% on the arch, with those lights kept, so the hard round spots do
+    not come back. <code>exec meshfix_off.cfg</code> is the kernel before,
+    <code>meshfix_on.cfg</code> the shipped one. Every M5 Quality tier pins it at this value, so a tier click restores it.</dd>
+
+    <dt>rt_metal_liquids_reflect_under</dt>
+    <dd>The water surface seen from below. Your word: &ldquo;underwater only, sometimes the
+    reflections on the bottom of the water surface when submerged are too strong&rdquo;.
+    From the bank the mirror is taken from the screen; under water that stands down and
+    what remains is the ray tracer&rsquo;s plainer image at the same gain. This scales it
+    while your eye is in the water: <strong>0.25</strong> by default, a faint sheen.
+    <code>exec underreflect_off.cfg</code>, <code>underreflect_on.cfg</code>,
+    <code>underreflect_full.cfg</code>.</dd>
+
+    <dt>rt_metal_fixturelights</dt>
+    <dd>The lamps as lights. The map lights itself from its light entities, and a light
+    entity sits a few units below its ceiling lamp and lights the floor; the lamp&rsquo;s
+    own face, the thing you see burning, lights nothing. This gives each one a light at
+    its own face &mdash; the base set&rsquo;s ceiling lamps, the lit floor panels, the
+    medieval wall lamps, the base&rsquo;s red buttons and the slipgate&rsquo;s strips,
+    thirty-two texture names with each texture&rsquo;s own hue &mdash; a hemisphere off
+    the face, so a ceiling lamp lights its ceiling and the fog under it and never the room
+    on the other side. One light per lamp, gathered when the map loads; on a map with more
+    lamps than the tracer can hold they take their turn in the ranking with every other
+    light. The red strips set into the metal trim of the older maps, the exit signs and the
+    key doors&rsquo; panels are lit too, at half the lamps&rsquo; strength so a corridor of
+    them does not turn the walls red; the runes are left as decoration, your choice. The
+    value is the strength. e1m1&rsquo;s base is the map to judge it on; e1m3 has
+    no lamps at all, its light is torches, which have always been lit. On since 28
+    September, your word: &ldquo;fixture lights all seems fine&rdquo;, and at <strong>half
+    strength since the 29th</strong>, your word again: &ldquo;I set it to half&rdquo;. The
+    stray hard spots you found at e3m3&rsquo;s exit were lamps whose faces pointed several
+    ways merged into one light inside the brush; each direction is its own light now and
+    none is placed inside rock. <code>exec fixturelights_half.cfg</code>, <code>fixturelights.cfg</code>,
+    <code>fixturelights2.cfg</code>, <code>fixturelights_off.cfg</code>. Every M5 Quality tier pins it at this value, so a tier click restores it.</dd>
+
     <dt>rt_metal_lightcap</dt>
     <dd>On by default at 0.75. A ceiling on how bright any one <em>map</em> light may be
     uploaded. Most Quake lights are 150–300; e1m2's water hall has three at 800, and
@@ -446,6 +492,20 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     bright single pixels along a monster's edge or round a wall fixture. This rolls the
     lighting off softly above the knee; <code>0</code> is the old unbounded look,
     <code>2</code> a flatter one.</dd>
+
+    <dt>rt_metal_lightrank</dt>
+    <dd>On by default. The ray tracer holds 256 lights and sees nothing past them. The biggest
+    maps exceed that &mdash; Arcane Dimensions&rsquo; Sepulcher and Zendar more often than not,
+    e3m4 and parts of e1m8 and e3m6 &mdash; and the lights it then keeps are the map lights
+    whose reach looks largest from where you stand (brightness times how much of the space
+    around you the light&rsquo;s sphere fills, whichever way you face), with dynamic lights
+    always first and lava lights after them. Nothing changes on a map whose lights fit.
+    <code>developer 1</code> prints one line the first time a map reaches the limit;
+    <code>0</code> is the old cut in the map&rsquo;s own order, which could drop a lamp beside
+    you for a faint one far away. <code>rt_metal_culldist</code> decides what is in range. The
+    score favours wide lights, so a small lamp at middle distance can lose its place to a
+    large one: <code>exec lightrank_off.cfg</code> and <code>lightrank_on.cfg</code> compare
+    the two.</dd>
 
     <dt>rt_metal_fog</dt>
     <dd>Moves the entire fog calculation into the ray tracer, so the fog is lit per step
@@ -486,6 +546,19 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     burn: a red enough texel emits its own colour, judged texel by texel, so brickwork,
     brown shadow and dried blood stay as dead as they should be.</dd>
 
+    <dt>m5_lumacalibrate</dt>
+    <dd>The slipgate&rsquo;s glow. The gate frames are lit by their own texture &mdash; red
+    strips and pulsing panels painted fullbright in the 1996 palette, at 255 of 255 &mdash;
+    and the replacement texture pack redrew those layers dim, at 72. Through the pack a
+    slipgate glowed at a quarter of its original light, which is why FTE without a pack
+    looked hotter here. At <strong>1</strong> every replacement glow layer is lifted at map
+    load to the original texture&rsquo;s own fullbright peak, never higher and never on a
+    surface the 1996 art did not light; <code>m5_lumacalibrate_max</code> caps the lift (4,
+    or 2 with <code>exec luma_soft.cfg</code>). Measured on the start map&rsquo;s gate at
+    your settings, the strips go from a median red of 69 to the full 255. It takes effect on
+    the next map load. On since 28 September, your word: &ldquo;luma on ... seems fine&rdquo;. <code>exec luma_on.cfg</code>,
+    <code>luma_off.cfg</code>.</dd>
+
     <dt>rt_metal_sameframe</dt>
     <dd>Normally the ray tracer runs a frame ahead of what you see, and its result is warped
     to match your current view — nearly perfect, but close edges and monsters can show a
@@ -493,6 +566,22 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     instead: no fringe, at a cost that ranges from nothing when the GPU is already busy to
     roughly an eighth of your frame rate. On by default. There is no menu row for it —
     <code>rt_metal_sameframe 0</code> at the console turns it off.</dd>
+
+    <dt>rt_metal_jitter</dt>
+    <dd>The temporal upscaler weaves frames drawn a fraction of a pixel apart into one sharper
+    picture, but the traced light used to hold still while the stone moved under it, so the
+    stone's edges were rebuilt and the light's were not. With this on, the light is traced
+    through the same offset as the picture, frame by frame. The shadow and bounce-light memory
+    follows the offset, and a grazing floor keeps its smoothing while it is on. It needs
+    <code>r_metalfx 2</code> and same-frame mode (the default), and the engine log in Xcode's
+    console pane says whether it is armed or waiting. Measured on your own aaroof frames, the
+    lit band's edge against the sky goes from stepped to straight: its staircase falls from
+    about 0.5 to 0.17. The fog is left unjittered on purpose, and the price is a little extra
+    shimmer in the fog's own buffer right on silhouette edges, which the finished frame mostly
+    hides. The first time it switches on there is a short stall while its trace kernel is
+    built. On by default since your verdict in motion (&ldquo;rtjitter_on.cfg looks
+    fine&rdquo;); <code>exec rtjitter_off.cfg</code> holds the rays still and
+    <code>rtjitter_on.cfg</code> puts them back.</dd>
   </dl>
 
   <p class="note">Torch flames are lifted out of the shadow-caster set into their own
@@ -505,9 +594,15 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   real shape around its lights, and god rays carry genuine per-light structure. Torch glow
   no longer spills through walls into fog it cannot see. That per-light structure is the
   fog's &ldquo;detail and clumpiness&rdquo;; without it the flat fill reads as a haze, and
-  it was sent straight back the one afternoon it was tried without. Every tier from Fast up
-  carries the pick; only Stock and Superfast leave it out. <code>rt_metal_lightsample 0</code>
-  restores the old dominant-light-only fog exactly. <strong>On surfaces</strong> (walls,
+  it was sent straight back the one afternoon it was tried without. And then, on 28
+  September, it went off again on your word: the fizz you saw at the crosshair wading the
+  channel under e1m2&rsquo;s walkway was the pick&rsquo;s own variance &mdash; on your demofizz
+  the fog there carries 1.65 levels of frame-to-frame grain with the pick and 0.45 without,
+  and nothing short of switching it off takes it away (the alternating hybrid 1.22, casts
+  every second step 1.34, the froxel off worse). So no tier carries the pick now; the fog is
+  lit by the brightest light&rsquo;s shadow and the unshadowed fill, a fifth faster.
+  <code>rt_metal_lightsample 1</code> (<code>exec fizz_back.cfg</code>) brings every
+  light&rsquo;s shadow back, fizz and all. <strong>On surfaces</strong> (walls,
   monsters) the brightest light at each point still takes the shadow ray and the rest are
   added unshadowed — the stochastic version of that (<code>rt_metal_lightsample 2</code>)
   sparkled in motion and stays an A/B curiosity only.</p>
@@ -622,14 +717,18 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     Set the colour to near-black for something inky rather than misty.</dd>
 
     <dt>rt_metal_fog_froxel</dt>
-    <dd>On by default, and on every tier from Good up: the fog is kept in three dimensions
+    <dd>On by default, and on Better, Best and Ultimate: the fog is kept in three dimensions
     rather than as a flat picture. The fog kernel marches fixed depth slices and each slice
     remembers its own history at its own distance, so the smoothing can run ten frames deep
     without trailing the scene when you strafe — the trailing a flat history cannot avoid,
     which is why deeper flat histories were tried and parked. Your word on first sight:
     &ldquo;froxel looks amazing, keep that.&rdquo; Lit fog is calmer walking and turning; a
-    light flick or a door settles within a third of a second. Fast keeps the old flat history
-    on its small fog buffer until a bench prices the volume there.
+    light flick or a door settles within a third of a second. Stock to Good keep the old flat
+    history on their small fog buffers. The volume is at most 2048 cells across and down,
+    Metal&rsquo;s limit for a 3D texture: on a very wide fog buffer (the cinematic recipe on a
+    window over 2048 pixels, or a render scale far above 100%) the buffer is held at that size
+    with its shape kept, and the console says <code>RT froxel fog: fog buffer held at
+    &hellip;</code> once.
     <code>exec froxel_off.cfg</code> is the flat history for A/B; <code>froxel24.cfg</code>
     is a cheaper 24-slice arm that reads a touch brighter than the true fog, and
     <code>froxel095.cfg</code> a deeper history.</dd>
@@ -796,7 +895,7 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   featureless and each pixel's sequence over frames cancels rather than piles up; the light
   test always includes the brightest light so no sample can go fully black
   (<code>rt_metal_lightsample_hybrid 3</code>, the single-pass form — on every tier that
-  runs the pick, since your eye passed <code>exec a5_both.cfg</code>, with
+  runs the pick, since your eye passed it on 13 September, with
   the fog's shadow cast every fourth step); and a depth-aware 3&times;3 filter runs over the
   fog at its own resolution before it is magnified (<code>rt_metal_fog_filter 1</code>,
   every tier). If a fine fizz still shows parked in a lit bank, <code>exec despeckle.cfg</code>
@@ -889,6 +988,36 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     reads, with the change eased over a fraction of a second at the waterline either way.
     0 gives FTE's crystal-clear water from the bank.</dd>
 
+    <dt>r_watersurface_reflect</dt>
+    <dd>The room reflected in the water, taken from the screen. Your verdict on the ray-traced
+    mirror (<code>rt_metal_liquids_rt</code>, 27 September): &ldquo;Reflections are basic and
+    not picking up bright spots.&rdquo; They could not: the kernel shades a reflected hit
+    with one mean colour per surface times the wall term, so a lamp face came back as a grey
+    patch, its glow — fullbright texels, added back after the RT multiply by the glow pass —
+    never reached it, and a flame came back as a bare constant. This one reflects the
+    <em>picture</em> instead. The view ray is mirrored about the surface&rsquo;s own rippled
+    normal and marched across the screen against the scene depth the guard already reads;
+    where it lands, the water takes the pixel already drawn there — the lamp with its glow
+    and its bloom, the torch, the bolt — mixed in at the surface&rsquo;s own Fresnel share
+    times this gain. At <strong>1</strong> that share is physical: a few per cent looking
+    thirty degrees down, a fifth at a grazing look; <strong>2</strong> and <strong>4</strong>
+    read as a mirror from above (<code>exec watersurface_reflect.cfg</code>,
+    <code>watersurface_reflect2.cfg</code>, <code>watersurface_reflect4.cfg</code>;
+    <code>watersurface_on.cfg</code> is the shipped look). Its limit is the screen: what is not drawn
+    cannot reflect — the ceiling straight above you, a lamp behind you — and a reflection
+    near the edge of the frame fades rather than ends; with the RT pair on
+    (<code>watersurface_reflect_pair.cfg</code>) the pair&rsquo;s flat reflection fills in
+    where the screen has nothing, at the pair&rsquo;s cost. It needs no ray tracing, works
+    on both renderers, and costs nothing where no water is in view. It ships at
+    <strong>4</strong> — your word, with the slime in front of you: &ldquo;looks great. Make
+    that stick&rdquo; (<code>exec watersurface_reflect_off.cfg</code> is the refraction alone).
+    <code>r_watersurface_reflect_ripple</code> (0.35) is how much of the ripple bends the mirror:
+    0 a glassy calm, 1 the full normal and a boil — the refraction&rsquo;s own normal tilts too
+    far to steer a mirror, which is why it has its own share. Console:
+    <code>r_watersurface_reflect_steps</code> (32, the samples along the march),
+    <code>_thickness</code> (24 units, how far behind the scene a hit may sit) and
+    <code>_dist</code> (2048 units, the ray&rsquo;s length).</dd>
+
     <dt>r_volumetric_waterdensity · _slimedensity · _lavadensity</dt>
     <dd>The murk inside. It half-obscures at roughly 70 divided by the value in world units,
     so 2.5 is a hand's reach — &ldquo;we really can't see a hand in front of our face&rdquo;,
@@ -950,7 +1079,27 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     the room mirrored off the surface, faint straight down and strong across a lake
     (<code>exec liquid_rt_on.cfg</code>) — worked, and you decided against it:
     &ldquo;I don't think reflections on the water is the way to go.&rdquo; Both stay as A/Bs,
-    off.</dd>
+    off. The reflection has since been remade to break up in the ripple — the next entry.</dd>
+
+    <dt>rt_metal_liquids_ripple</dt>
+    <dd>The reflection, broken up. With the pair on (<code>exec liquid_rt_ripple.cfg</code>)
+    the mirror image in the water is read through the surface&rsquo;s own ripple — the same
+    displacement the pool floor takes under <code>r_watersurface</code>, at this fraction of it
+    (1 is the floor&rsquo;s, <code>liquid_rt_ripple05.cfg</code> half) — so a torch on the bank
+    is a wobbling smear on the water rather than a picture. It also sits <em>over</em> the
+    refracted view at its own Fresnel weight now: faint straight down, strong across a lake.
+    Before, the flat mirror was mixed in with the surface&rsquo;s texture, and under the water
+    surface that share is next to nothing except at a grazing angle — which is why the
+    pair&rsquo;s reflection had so little to show at a moat seen from the bank. Two things you
+    will meet that are not the ripple: the water reads darker with the pair on, because it
+    bypasses the <code>_minlight</code> floor (the room&rsquo;s real light at the surface —
+    <code>rt_metal_liquids</code> is the level), and it costs a few percent on a view that is
+    mostly liquid, nothing where no liquid is in view. Needs the water surface on (the
+    default); without it the read is flat and the console says so.
+    <code>liquid_rt_glint2.cfg</code> and <code>liquid_rt_glint4.cfg</code> brighten the
+    reflection two and four times; <code>liquid_rt_on.cfg</code> is the flat mirror for
+    comparison, <code>liquid_rt_off.cfg</code> the pair off. 0 is the old text. Off until your
+    eye passes it. Superseded for what the screen can see by <code>r_watersurface_reflect</code>, the entry above under the water surface; with both on, the pair fills in what the screen cannot.</dd>
 
     <dt>rt_metal_liquidemissive</dt>
     <dd>Opaque water and slime get the lava treatment: the rays stop at the liquid surface,
@@ -1167,7 +1316,10 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     used to be an even grey ramp from soot to pure white. That ramp is why they read white,
     and the reason is arithmetic rather than taste: it is a uniform population, so 57% of
     motes sat above mid-grey against 12% on the palette, and the mean mote was 143 of 255
-    against 82. <code>m5_dust_tint 0</code> is the old ramp back.
+    against 82. <code>m5_dust_tint 0</code> is the old ramp back. <strong>Since 28
+    September each mote is born at half opacity</strong> (<code>m5_dust_alpha</code> 0.5,
+    from 1) &mdash; your word, &ldquo;still too bright, needs to be 50% darker&rdquo;, and
+    the motes blend by alpha, so half the opacity is half the brightness.
     They are lit like any other particle, so turn on <code>cl_particles_lighting 2</code>
     with it: motes catch torchlight, hang in a doorway's light and flare when a rocket goes
     past. <strong>If they still catch your eye too much, the knob is
@@ -1386,9 +1538,59 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
 
   <p>It scales the gamma curve, so it dims the whole finished frame rather than just the
   lighting. That is deliberate: the fog's colour is authored rather than lit, so dimming the
-  lighting alone would leave the fog looking like it was glowing on its own. The three rows
+  lighting alone would leave the fog looking like it was glowing on its own. The rows
   under the slider — gamma trim, contrast, scene brightness — are trims for a particular
-  display, not the main control.</p>
+  display, not the main control; the last, HUD Brightness, is below.</p>
+
+  <p>The status bar, the crosshair, the messages at the top of the screen and the centre
+  print are drawn over the finished frame, after the gamma curve, so a dark setting leaves
+  them at full white, and the message text can be more than twice as bright as anything in
+  the scene. <strong>HUD Brightness</strong>, the last row on the page
+  (<code>r_hud_brightness</code>, 0.1–1, default 1), dims that in-game layer by a straight
+  factor: the status bar and crosshair, notify and chat text, the centre print, the pause
+  plaque, a mod&rsquo;s CSQC HUD, the fps meter and the showreel&rsquo;s caption. The menus,
+  the console, the loading screen and video playback stay at full white on purpose, so the
+  page you set it from never dims with it; with a game running, the status bar behind the
+  menu dims as the slider moves. At 1 everything is drawn exactly as before. It is a
+  straight dimmer rather than the gamma curve, and it leaves a mod&rsquo;s multiplicative
+  overlays (the modulate blends) alone, because scaling those would darken the picture under
+  them instead of dimming them. No quality tier touches it, and neither does Stock. A good
+  starting point is your Contrast value: the curve&rsquo;s white sits at
+  <code>v_contrast</code> (plus <code>v_brightness</code>), so a HUD set to the same number
+  matches the brightest the scene can be without HDR.</p>
+
+  <p class="note"><strong>On an OLED display</strong> the one bright shape that never moves
+  is the status bar, and hours of it in one place can leave a ghost on the panel. Dim it
+  here, or take it away: <code>viewsize 110</code> drops the inventory row and
+  <code>viewsize 120</code> removes the bar entirely (the = and - keys step it; at 120
+  nothing shows your health and ammo). The menus and the console come and go and are no
+  risk. A fresh install starts at <code>viewsize 100</code>, the full bar.</p>
+
+  <p>A dark picture has few steps to spend at the bottom of the curve on a screen that holds
+  eight bits a colour, and the deepest gradients break on them: a slope of shadow becomes a
+  staircase, and a pillar lit only by the room&rsquo;s fill becomes one flat shade.
+  <code>r_dither 1</code> lays a fixed grain of up to one level either way over the picture at
+  the one point it is squeezed to eight bits, so the staircase dissolves; true black and white
+  stay exact, and the grain is the same every frame. On Metal the frame is held in floating
+  point to the very end and dithered once, at the copy to the window; screenshots, dumps and
+  captures take the identical dither, so a capture is what an ordinary screen shows. On an HDR
+  display the picture itself is not squeezed at all, so only the captures change &mdash;
+  <code>exec dither_sdr.cfg</code> turns HDR off and the dither on to judge it,
+  <code>exec dither_sdr_off.cfg</code> is the same picture undithered, and
+  <code>r_edr 1</code> turns HDR back on. It works where the frame still holds the detail: the analytic gamma curve
+  (<code>r_gamma_analytic 1</code>, which HDR sets for itself) keeps it at the dark end. 0.5 to
+  2 scales it, Stock turns it off, and it is on by default since you passed it on e1m3 with
+  HDR off (&ldquo;dither_sdr.cfg looks fine&rdquo;); its frame cost measured nil. Metal
+  only.</p>
+
+  <p>The engine builds each shader variant the first time a frame needs it, and on a fresh
+  install that build lands mid-play: the first damage flash, the first water, the first bloom
+  each cost a stalled frame (the view-tint shader took 401 ms on the attract demo&rsquo;s first
+  hit). <code>r_shaderwarm</code> (1) compiles the variants real play needs at the first frame
+  of the first map instead &mdash; a shipped list made from recorded play, plus this
+  install&rsquo;s own list, written beside the config when you quit with whatever the session
+  still had to build &mdash; so the first load is longer once and the stalls are gone. Measured on this Mac with the shader cache defeated: the first hit&rsquo;s 358 ms stall is gone, the first load is about a second and a half longer, once, and with the cache warm the warm-up takes 24 ms.
+  0 builds each on first use, as before.</p>
 
   <p class="note">If your blacks still will not go dead, the last thing holding them up is
   <code>rt_metal_ambient</code> (0.15), a flat fill that stops surfaces facing away from every
@@ -1405,15 +1607,17 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   end. On a display running in macOS HDR mode, <strong>Extended Dynamic Range</strong> hands
   a muzzle flash or a pool of lava to the screen <em>brighter than white</em>, instead of
   flattening it to the same white the health digits are already at. The HUD deliberately
-  stays at ordinary white while the scene runs past it — so the two side by side in one
-  frame are the test.</p>
+  stays at ordinary white while the scene runs past it (at HUD Brightness 100%) — so the
+  two side by side in one frame are the test.</p>
 
   <p>It is one switch: the <strong>HDR (EDR)</strong> row on <strong>Options → Video
   Options</strong>, or <code>r_edr 1</code> in the console. Everything it needs — the float
   scene buffer, the analytic gamma curve — it sets up for itself (about 8% of a frame,
   and a one-off shader-rebuild pause the first time).</p>
 
-  <p>The test is in the frame itself: the HUD stays at ordinary white on purpose, so a
+  <p>The test is in the frame itself: the HUD stays at ordinary white on purpose (judge it
+  with <strong>HUD Brightness</strong> at 100%, since a dimmed HUD is no longer ordinary
+  white), so a
   muzzle flash or a glow should read clearly brighter than the health digits beside it. (The
   desktop dimming when it takes hold is sometimes quoted as the tell — on this rig it does
   not, and the effect works regardless, so judge it by the game.) <code>r_hdr_shoulder
@@ -1423,6 +1627,22 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   on monster edges bother you, <code>r_fxaa 1</code> in the console (there is no menu row)
   softens them at a small cost in texture crispness. <code>r_edr 0</code> puts
   everything back exactly.</p>
+
+  <p><code>r_hdr_displayfit</code> (0, and it stays off: on your HDR display you preferred the
+  old roll-off, &ldquo;hdrfit_off looks better&rdquo;) aims that roll-off at
+  the brightest value the display can actually show after the gamma curve. macOS reports
+  the HDR grant in linear light while the picture is sRGB-encoded, so a 1.756 grant is
+  1.279 in the picture&rsquo;s own units; at 0 the curve&rsquo;s ceiling takes 1.756 as if
+  it were encoded, and the band between the two is emitted and then clipped flat. At 1 the
+  ceiling is 1.279 and the roll-off ends exactly there, so the top keeps its gradation
+  &mdash; and without HDR it ends at full white, where under a curve that darkens white (your
+  <code>v_contrast 0.5</code>) every highlight used to stop near screen value 124. The
+  trade under HDR is that highlights just above the knee sit lower: <code>r_hdr_shoulder
+  0.85</code> to <code>0.9</code> lifts them back and keeps the gradient. Nothing changes
+  below the knee, nothing at <code>v_contrast 1</code> without HDR, and nothing on the
+  table path (<code>r_gamma_analytic 0</code>). <code>exec hdrfit_on.cfg</code> and
+  <code>exec hdrfit_off.cfg</code> are the A/B, each labelled on screen;
+  <code>r_gamma_analytic_test</code> prints the fit in force.</p>
 
   <p>The bloom is the other half of a highlight, and the engine's own is the 2001 one:
   the scene shrunk to a small buffer, squared a few times and blurred with offset quads,
@@ -1467,9 +1687,11 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   new Ultimate is <strong>×1.50–1.61</strong> of the old one on the average and ×1.36–1.42 on
   the worst second.</p>
 
-  <p><strong>Ultimate is <code>exec rich.cfg</code> wired into the menu</strong> — your own
-  19 September verdict, "it looks best (i.e. sky jaggies gone) if I select Ultimate in the
-  menu, and then exec rich.cfg", in one click. <strong>Better, Best and Ultimate</strong> use
+  <p><strong>Ultimate is <code>rich.cfg</code>'s lighting wired into the menu</strong> — your
+  own 19 September verdict, "it looks best (i.e. sky jaggies gone) if I select Ultimate in the
+  menu, and then exec rich.cfg", in one click (<code>rich.cfg</code> itself also switched the
+  eleven small effects off, which no tier does, and it stays a personal recipe outside the
+  public download). <strong>Better, Best and Ultimate</strong> use
   the <em>temporal</em> scaler with its reactive mask; <strong>Superfast, Fast</strong> and
   <strong>Good</strong> use the spatial one — Superfast went back to spatial on the 19th,
   because the reason it had been moved to temporal the day before ("spatial cannot reconstruct
@@ -1496,7 +1718,7 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
       <tr><td>Good</td><td>144&ndash;145</td><td>94&ndash;95</td><td>the spatial upscaler, a 240&times;135 fog buffer, the 2D fog history rather than the three-dimensional volume; no bounce light. This is the <strong>cheapest tier that still holds the full fog kernel</strong>, and the rung above it is the big one</td></tr>
       <tr><td>Better</td><td>112&ndash;113</td><td>73&ndash;76</td><td>the <strong>temporal</strong> scaler with its reactive mask and the three-dimensional fog volume at 24 slices &mdash; the two together are worth &times;1.28 over Good, the largest rung in the table; no bounce light</td></tr>
       <tr><td>Best</td><td>102&ndash;103</td><td>55&ndash;69</td><td>Better plus <strong>bounce light</strong> and 32 froxel slices &mdash; &times;1.10 over Better</td></tr>
-      <tr><td>Ultimate</td><td>99&ndash;100</td><td>66&ndash;68</td><td><strong><code>rich.cfg</code> exactly</strong>: Best at a 320&times;180 fog buffer. That last rung is only &times;1.02 &mdash; the fog buffer was the most expensive resource in the engine when the raster was 1280&times;720, and at 720&times;405 it is not. <strong>Ultimate and Best are the same speed on this bed</strong>, and the lever that would separate them is bounce light, which is yours to spend</td></tr>
+      <tr><td>Ultimate</td><td>99&ndash;100</td><td>66&ndash;68</td><td><strong><code>rich.cfg</code>'s lighting</strong>: Best at a 320&times;180 fog buffer and 48 froxel slices (32 until 28 September; the count you play, about 2% of the frame). That last rung is only &times;1.02 &mdash; the fog buffer was the most expensive resource in the engine when the raster was 1280&times;720, and at 720&times;405 it is not. <strong>Ultimate and Best are the same speed on this bed</strong>, and the lever that would separate them is bounce light, which is yours to spend</td></tr>
     </tbody>
   </table>
 
@@ -1518,8 +1740,9 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   it only softens what the scaler is about to work from. If you want the old render-resolution
   FXAA back, <code>exec fxaa_on.cfg</code>; the M5 Quality row will then read Custom, honestly.
   <strong>One trap worth knowing, because it cost a session:</strong>
-  <code>exec nofx_aa.cfg</code> appeared to do nothing when run on top of Ultimate. It asks for
-  the <em>spatial</em> scaler so that <code>r_smaa</code> has a full-size target &mdash; but
+  a recipe that switched to the spatial scaler with <code>r_smaa</code> on appeared to do
+  nothing when run on top of Ultimate. It asked for the <em>spatial</em> scaler so that
+  <code>r_smaa</code> has a full-size target &mdash; but
   the spatial scaler is refused at Render Scale 100%, which is what Ultimate had, so there was
   no scaler, no target, and the pass silently did not run. A refused pass draws a perfectly
   correct frame and says nothing.</p>
@@ -1544,10 +1767,9 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   enlarges 3.2&times; to fill the screen &mdash; and under wall lighting that light <em>is</em>
   the picture. Draw it at full size with <code>rt_metal_scale 1</code> and the pair reads
   <strong>0.229</strong> on your own demo against 0.362 untreated and 0.283 for the best FXAA.
-  Neither half gets there alone. The term at full size costs frames, so the pair is a trade
-  rather than a free win; <code>exec aa_term1_smaa.cfg</code> is it, <code>aa_smaa.cfg</code>
-  is the pass alone, and <code>aa_reset.cfg</code> puts your saved settings back. Both default
-  off until you have judged them.</p>
+  Neither half gets there alone. At a full-size raster the full-size term cost frames, so the
+  19 September retier moved the raster down to meet it instead, and every tier but Stock now
+  ships the pair.</p>
   </div>
 
   <p class="note">Every row above was measured on <strong>one afternoon, on one machine
@@ -1628,14 +1850,14 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   telling the scaler how — a rocket's <em>glow</em> sweeping across a floor that is not
   itself moving, the <em>smoke</em> it leaves, blood and sparks — can leave a faint trail;
   the rocket itself, and monsters, doors and lifts, report their own motion and should
-  not. <code>r_metalfx_reactive 3</code> (which <code>taa_on.cfg</code> sets) tells the
+  not. <code>r_metalfx_reactive 3</code> (which every temporal tier sets) tells the
   scaler to distrust its history exactly where moving light and particles land, and
   measured against the scaler's own "forget everything" mode it removes nearly all of that
   lingering; what is left is the temporal scaler rendering small bright puffs a touch
   softer than bilinear does, which is a look and not a trail. And you lose the spatial
-  scaler's extra bite on the stonework. <code>r_metalfx 1</code> puts you back exactly
-  where you were; <code>exec taa_on.cfg</code> and <code>exec taa_off.cfg</code> switch
-  between the two without typing, and <code>r_metalfx_reactive_debug 1</code> shows you
+  scaler's extra bite on the stonework. <code>r_metalfx 1</code> is the spatial scaler and
+  <code>r_metalfx 2</code> the temporal one (the M5 Quality row reads Custom until you click a
+  tier again), and <code>r_metalfx_reactive_debug 1</code> shows you
   what the scaler is being told (white = distrust).</p>
 
   <p class="note">The ray-traced shadows have their own resolution knob and the two
@@ -1656,7 +1878,8 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
 
   <h3>The showreel</h3>
   <p><code>exec showreel.cfg</code> at the console and sit back: about nineteen minutes,
-  no input, sound on, run it on Metal. It plays your own demos for their themes and adds the
+  no input, sound on, run it on Metal. It needs your own recorded demos, so neither it nor
+  <code>showreel_ab.cfg</code> is in the public download. It plays those demos for their themes and adds the
   fork's features one at a time, about every twenty-five seconds, in the order they were built
   &mdash; the 1996 picture on e3m1, then the modern baseline, the red glow, the murk, the ground
   fog, dust, ray-traced shadows, full wall lighting, ray-traced fog, bounce lighting, the
@@ -1677,7 +1900,8 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
   every history, every jitter and the fog's own clock run by the frame count and the result is
   the same every time you run it. That lets the ray tracer be set far past any tier:
   <code>exec cinematic.cfg</code> puts the trace at native resolution with 32 shadow rays a
-  pixel, the fog at a native buffer with 64 slices and a shadow cast in every one, the light
+  pixel, the fog at a native buffer (held at 2048 cells across on a wider window) with 64
+  slices and a shadow cast in every one, the light
   pick at two rays a cast, bounce lighting at full rate, and the upscaler at native (where it
   is pure antialiasing), then sets the capture to 60 frames a second. Then:</p>
   <pre>playdemo demo11
@@ -1697,6 +1921,20 @@ cl_capturevideo 1</pre>
   upscaler&rsquo;s history are random by design. If a cut needs two identical takes, add
   <code>m5_dust 0</code>, <code>cl_particles 0</code> and <code>r_metalfx 1</code> for
   both.</p>
+
+  <h3>Timing a demo</h3>
+  <p><code>timedemo demo11</code> plays a demo as fast as the machine allows and prints the
+  frame rate. The line each timedemo writes to <code>benchmark.log</code> in your
+  <code>m5</code> folder ends with how evenly the frames came: the median, 95th, 99th and
+  99.9th percentile frame times and the worst frame, in milliseconds, then how many frames ran
+  over twice the median and how many over 33&nbsp;ms. The one-second low beside it averages a
+  second of the <em>demo&rsquo;s</em> time &mdash; some seventy frames, one per demo packet
+  &mdash; so a single 50&nbsp;ms stall is a 6% dip there and plain here. With
+  <code>developer 1</code> the same figures print under the frame rate at the console. The
+  worst frame of a first launch is often a shader being built the first time something new
+  appears on screen: the first damage flash after a shader change takes about 400&nbsp;ms on
+  this machine, and the next launch has kept it. Compare two settings on the median and the
+  99th percentile, never on the worst frame.</p>
 </section>
 
 <section id="sound">
@@ -1790,7 +2028,7 @@ cl_capturevideo 1</pre>
   <p class="opener">The game ships as two things that live side by side, in any folder you
   like — inside <em>Applications</em>, in a <em>Games</em> folder, on an external disk:</p>
 
-  <pre><code>QuakeM5.app
+  <pre><code>MetalQuake.app
 packs/id1/PAK0.PAK …
 packs/m5/ …            the mods
 packs/hipnotic/ …      and rogue, dopa, mg1, ad</code></pre>
@@ -1804,9 +2042,9 @@ packs/hipnotic/ …      and rogue, dopa, mg1, ad</code></pre>
 
   <pre><code>sh release/make-release.sh</code></pre>
 
-  <p>That produces a small <code>QuakeM5-app-….zip</code> (a few megabytes, everything the
+  <p>That produces a small <code>MetalQuake-app-….zip</code> (a few megabytes, everything the
   engine needs bundled inside — no Homebrew or other install required on the other
-  machine) and a large <code>QuakeM5-packs-….zip</code> holding the game data. They are
+  machine) and a large <code>MetalQuake-packs-….zip</code> holding the game data. They are
   separate on purpose: the data rarely changes, so once it is on the other Mac only the
   app zip needs sending again.</p>
 
@@ -1818,7 +2056,7 @@ packs/hipnotic/ …      and rogue, dopa, mg1, ad</code></pre>
   (App Translocation), so it genuinely cannot see its neighbours — the app's own error
   screen says so when it happens. One Terminal command fixes both, once: open Terminal,
   paste <code>xattr -dr com.apple.quarantine </code> (with the trailing space), drag the
-  QuakeM5 app onto the Terminal window, press Enter. This is macOS being careful about an
+  MetalQuake app onto the Terminal window, press Enter. This is macOS being careful about an
   app not signed by a paid developer account, not a fault in the build.</p>
 
   <h3>Your settings come too</h3>
@@ -1828,6 +2066,23 @@ packs/hipnotic/ …      and rogue, dopa, mg1, ad</code></pre>
   writes <em>that machine's</em> settings to its own home folder instead, and from then on
   the shipped copy is ignored. So it is a starting point, not a lock: to get back to it,
   delete the local copy and start the game again.</p>
+
+  <p><strong>The public download is different.</strong> Its <code>packs/m5/config.cfg</code>
+  is generated from an allow-list by <code>release/make-public-config.py</code>: the Best
+  row of the tier table, the look you approved (the murk, the ray-traced light, water, bloom
+  and glow, the highlight shoulder, the brightness curve, lava and the thunderbolt),
+  <code>vid_vsync 1</code> and PNG screenshots — and nothing else. Every gameplay extra, key
+  binding, screen mode and sound level is the engine's own default, so the Doom shotgun,
+  bullet time, movement presets, gore, burning and venom start off and the ball lightning
+  and the weapon feel start on; the eleven small effects your <code>rich.cfg</code> switches
+  off are on, as every tier has them. A cvar in your config that is on neither the look list
+  nor the list of things left out stops the release until it is classified. The recipes in
+  the download are the ones the guide, the manual and <code>SETTINGS.md</code> name, the ones
+  those recipes send you to, the three the engine's own help text names, and the per-pack
+  look files (<code>release/recipes.txt</code>, checked by <code>release/check-recipes.py</code>
+  in docsync and in the release build). A player who
+  ran an earlier download keeps what it wrote to their own config until they delete that
+  file.</p>
 
   <p>To move just the config later, without rebuilding anything —
   <strong>quit the game on both machines first</strong>, because it rewrites this file when

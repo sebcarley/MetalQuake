@@ -88,6 +88,11 @@ void RT_Metal_SetLiquidRT(int enable, float reflect);
 // Set the camera for the next trace. Vectors are Quake-space (forward/right/up);
 // tanx/tany are the tangents of the half horizontal/vertical field of view.
 void RT_Metal_SetCamera(const float origin[3], const float forward[3], const float right[3], const float up[3], float tanx, float tany);
+/// REVIEW 0.6 (rt_metal_jitter): the ray-side TAA offset in render (viewport)
+/// pixels in the kernel frame (x right, y up = GL rows); 0/0 when the raster is
+/// not jittered. Applied only under same-frame RT (async shows another phase).
+/// Call every frame.
+void RT_Metal_SetJitter(int enable, float jx, float jy);
 
 // Floats per light in the buffer handed to RT_Metal_SetLights. Every producer
 // and all three kernels index by this; change it in one place and the kernels'
@@ -120,11 +125,24 @@ void RT_Metal_SetCamera(const float origin[3], const float forward[3], const flo
 // staging array in three, so this define and the code disagreed silently.
 #define RT_LIGHT_STRIDE 14
 
+// THE KERNELS' LIGHT CAP (REVIEW 0.7). rt_trace, rt_shaft and rt_fog each stage
+// min(numLights, 256) of the upload into threadgroup memory (tgl[256 * RTL]) and
+// cull per tile over THOSE ONLY (the 256-bit tflags/gflags masks, tlist[256],
+// uchar gtlist[256]) -- so the cap is GLOBAL on upload order: a light past index
+// 255 reaches no pixel, fog step, bounce or reflection. LOCKSTEP with the three
+// `min(cam.numLights, 256u)` lines in rt_metal.m, which a _Static_assert there
+// ties to this value; raising it costs threadgroup memory (tgl alone is 14 KB of
+// 32 KB) and needs gtlist widened. cl_screen.c's RT_RankLightsForKernel decides
+// WHICH lights sit in those 256 when more are in range.
+#define RT_KERNEL_MAXLIGHTS 256
+
 // Hand the map's real lights to the sidecar. `data` is RT_LIGHT_STRIDE floats
 // per light, laid out as above. Called every frame; copied into a grow-only
 // per-slot GPU buffer (double-buffered against the in-flight async frame).
 // The FIRST `numdynamic` lights must be the DYNAMIC ones (explosions / flashes),
 // prepended by the caller — only those receive the colored brighten in the kernel.
+// The kernels read only the first RT_KERNEL_MAXLIGHTS; the caller ranks the rest
+// (rt_metal_lightrank) when more than that are in range.
 void RT_Metal_SetLights(const float *data, int numlights, int numdynamic);
 
 // Hand this frame's dynamic shadow-casting entity geometry (monsters, items,
@@ -171,6 +189,7 @@ void RT_Metal_SetReprojectDepth(int enable);
 // blue-noise table (featureless grain), 0 = the classic IGN dither, byte-exact.
 // Call every frame; a CHANGE lazily rebuilds the kernel PSOs (one-off hitch).
 void RT_Metal_SetBlueNoise(int enable);
+void RT_Metal_SetShadowSmooth(int enable);   // rt_metal_shadowlights_smooth (RT_RUPSMOOTH)
 
 // rt_metal_sameframe: show THIS frame's trace instead of the previous frame's
 // (the slot order RT_METAL_SYNC=1 has always forced, promoted to a runtime
@@ -454,10 +473,12 @@ void RT_Metal_MarkComposited(void);
 
 // Spike verification aid: dump the final backbuffer (scene + composite + HUD)
 // once if the env var RT_METAL_DUMP is set. Call at end of frame (VID_Finish).
-// counting: 1 on frames with run-stable numbering (timedemo playback frames);
-// only those advance the dump frame counter, so ".fN" names align across runs.
+// index: the timedemo's own playback frame count (cls.td_frames -- the "frame N"
+// cl_showfps draws) on a timedemo playback frame, 0 on any other present. The
+// ".fN" names ARE that count, so they align across runs and with the screen
+// (2026-09-24; see rt_dump_decide for the counter this replaced).
 // This is the GL renderpath's arm (glReadPixels of the window backbuffer).
-void RT_Metal_DumpFrame(int width, int height, int counting);
+void RT_Metal_DumpFrame(int width, int height, int index);
 
 // The Metal renderpath's arm of the same dump (METAL.md Phase 8-1a): reads
 // fbo 0's colour — the backend screen texture, scene + HUD, pre-present — and
@@ -465,7 +486,7 @@ void RT_Metal_DumpFrame(int width, int height, int counting);
 // numbering (the counter and env parse are shared). Pass vid.mode.width and
 // height, which are what sized the screen texture. Cannot see the present
 // pass; clamps to 8-bit under EDR (the caller notes that once on stderr).
-void RT_Metal_DumpFrameMetal(int width, int height, int counting);
+void RT_Metal_DumpFrameMetal(int width, int height, int index);
 
 // Reset the jitter-rotation phase and temporal chains to a run-invariant state.
 // Called at timedemo start (dump A/B rig); never during normal play.

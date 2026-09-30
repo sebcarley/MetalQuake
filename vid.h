@@ -116,9 +116,10 @@ typedef struct viddef_s
 	int xPos, yPos; ///< current virtual position of the top left corner of the SDL window
 
 	/// EDR (METAL.md Phase 7). The display headroom the OS has granted this
-	/// layer, in units of SDR white: 1.0 is plain SDR and is the floor. The
-	/// renderer reads it in R_BlendView, for the highlight shoulder's asymptote
-	/// and the analytic gamma's ceiling.
+	/// layer, in units of SDR white: 1.0 is plain SDR and is the floor. It is
+	/// LINEAR light -- NSScreen reports a multiple of reference white. The
+	/// renderer's ceiling is edr_ceiling below; R_BlendView reads this field
+	/// directly only under r_hdr_displayfit 0, the old pairing (REVIEW 0.3).
 	///
 	/// It is a viddef_t field rather than a VID_Metal_* call ON PURPOSE.
 	/// gl_rmain.c is in OBJ_COMMON and links into darkplaces-dedicated, where
@@ -133,6 +134,15 @@ typedef struct viddef_s
 	/// byte-identical to Phase 6 by construction rather than by measurement --
 	/// though it is measured anyway.
 	float edr_headroom;
+
+	/// The same grant in the DRAWABLE'S OWN ENCODING (REVIEW 0.3, 2026-09-24):
+	/// the most the postprocess's display-encoded output can usefully reach
+	/// before macOS clips it. The layer is tagged extended sRGB, whose transfer
+	/// function the compositor undoes before comparing against the LINEAR
+	/// headroom above, so a 1.756 grant is 1.279 here. Exactly 1.0 whenever
+	/// edr_headroom is 1.0. Same single writer as edr_headroom
+	/// (VID_Metal_Finish), because only vid_metal.m knows the tag.
+	float edr_ceiling;
 
 	/// EDR, the renderer's half of the ask (METAL.md Phase 7-4). True when the
 	/// renderer is in a state that could USE extended range: r_edr on, the Metal
@@ -158,8 +168,19 @@ typedef struct viddef_s
 	/// It exists so that the DRAWABLE and the offscreen screen texture cannot
 	/// disagree about the format, which is the failure METAL.md warns about in
 	/// as many words: a 16F drawable fed from an 8-bit source is visually
-	/// identical to today and a green test that proves nothing.
+	/// identical to today and a green test that proves nothing. (Since REVIEW
+	/// 0.5 the screen texture can be float WITHOUT the drawable -- r_dither
+	/// holds the frame float to the present -- so "fbo 0 is float" is
+	/// Metal_Backend_ScreenIsFloat(), read off the texture, not this field.)
 	qbool edr_active;
+
+	/// r_dither's renderer half (REVIEW 0.5): the output dither's amplitude in
+	/// 8-bit levels, 0 = off. Written once a frame in R_UpdateVariables (the
+	/// edr_wanted shape); the Metal backend reads it to hold the screen texture
+	/// float, to dither at the present, and to dither 8-bit readbacks of that
+	/// screen. A viddef_t field for edr_wanted's reason: the backend never
+	/// reaches back into gl_rmain.c. Always 0 off the Metal renderpath.
+	float dither;
 } viddef_t;
 
 /// global video state
@@ -314,6 +335,9 @@ void VID_ApplyGammaToColor(const float *rgb, float *out);
 /// that clamps at 1.0 by construction. False when the curve is not this formula
 /// (v_psycho, or the sRGB post-transform) and the LUT must be used instead.
 qbool VID_GetGammaAnalytic(float invgamma[3], float scale[3], float base[3], float *contrastboost);
+/// A LINEAR EDR value (NSScreen's headroom) in the extended-sRGB encoding the
+/// postprocess writes: 1.756 -> 1.279. Exactly 1.0f at or below 1.0.
+float VID_EDREncode(float linear);
 
 typedef struct
 {

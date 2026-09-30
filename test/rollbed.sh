@@ -92,6 +92,7 @@ v_gamma 1
 v_contrast 1
 r_brightness 0.5
 r_edr 0
+r_dither 0
 $EXTRA
 defer 2 "map e1m3"
 defer 12 "host_framerate 0.05"

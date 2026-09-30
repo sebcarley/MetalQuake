@@ -1,0 +1,155 @@
+# release/recipes.txt -- the recipe .cfg files the PUBLIC download ships, by name.
+#
+# A recipe ships because it is NAMED here, never because it was not excluded
+# (RELEASE.md's allow-list rule; REVIEW.md 0.9). release/check-recipes.py fails when
+#   - a [ship] name is not a file in m5/ or (in the tree) is not tracked: the recipes
+#     are force-added past .gitignore's /m5/* -- git add -f m5/<name>.cfg;
+#   - docs/GUIDE.html, docs/MANUAL.html or SETTINGS.md names a recipe that is neither here nor under
+#     [not-shipped] (config.cfg is the profile the build writes; default.cfg is id1's);
+#   - a shipped recipe tells the player to exec one that does not ship;
+#   - a built packs/m5 carries any .cfg that is not listed here.
+# test/docsync.py runs the tree check (so smoke does); release/make-release.sh runs both.
+# One name per line; a [not-shipped] line gives its reason after the name (spaces, not tabs).
+
+[ship]
+# the pack look files: the engine execs m5pack_<gamedir>.cfg when that pack is mounted
+m5pack_ad.cfg
+m5pack_dopa.cfg
+m5pack_hipnotic.cfg
+m5pack_mg1.cfg
+m5pack_rogue.cfg
+# every recipe the guide, the manual or SETTINGS.md names, the three their echo lines
+# send the player to (asskip_off, liquid_own_off, liquid_rt_off), and the three the
+# engine's own help text names (gi_rate1/2/4, in rt_metal_gi_rate's)
+airabsorb_off.cfg
+airabsorb_on.cfg
+asskip.cfg
+asskip_off.cfg
+ball_off.cfg
+ball_v1.cfg
+ball_v2.cfg
+bloom_m5_off.cfg
+bloom_m5_on.cfg
+caustics_off.cfg
+caustics_on.cfg
+cells256.cfg
+cells64.cfg
+cinematic.cfg
+cinematic_off.cfg
+contact_off.cfg
+contact_on.cfg
+despeckle.cfg
+despeckle_off.cfg
+dither_sdr.cfg
+dither_sdr_off.cfg
+droplet_off.cfg
+droplet_on.cfg
+dust_ash.cfg
+dust_ash_dark.cfg
+dust_white.cfg
+embers_off.cfg
+embers_on.cfg
+feel_off.cfg
+feel_on.cfg
+flash_off.cfg
+flash_on.cfg
+fog_liquidlight_half.cfg
+fog_liquidlight_off.cfg
+fog_liquidlight_on.cfg
+foglight_beams3.cfg
+foglight_beams5.cfg
+foglight_off.cfg
+foglight_on.cfg
+froxel.cfg
+froxel095.cfg
+froxel24.cfg
+froxel_off.cfg
+fxaa_on.cfg
+gi_albedo_off.cfg
+gi_ao_half.cfg
+gi_ao_off.cfg
+gi_ao_on.cfg
+gi_off.cfg
+gi_on.cfg
+gi_rate1.cfg
+gi_rate2.cfg
+gi_rate4.cfg
+hdrfit_off.cfg
+hdrfit_on.cfg
+lightrank_off.cfg
+lightrank_on.cfg
+liquid_own_off.cfg
+liquid_own_on.cfg
+liquid_rt_glint2.cfg
+liquid_rt_glint4.cfg
+liquid_rt_noglint.cfg
+liquid_rt_off.cfg
+liquid_rt_on.cfg
+liquid_rt_ripple.cfg
+liquid_rt_ripple05.cfg
+liquidfloor_off.cfg
+mist_high.cfg
+mist_low.cfg
+mist_mid.cfg
+occlusion_lp_off.cfg
+occlusion_lp_on.cfg
+pipeline.cfg
+pipeline_off.cfg
+quadglow_off.cfg
+quadglow_on.cfg
+quadglow_soft.cfg
+refract_off.cfg
+refract_on.cfg
+reverb_off.cfg
+reverb_on.cfg
+rtjitter_off.cfg
+rtjitter_on.cfg
+scorchglow_off.cfg
+scorchglow_on.cfg
+skylightning_fog1.cfg
+skylightning_nofog.cfg
+skylightning_off.cfg
+skylightning_on.cfg
+soft_off.cfg
+soft_on.cfg
+sparks_reset.cfg
+spotfix_max.cfg
+spotfix_off.cfg
+spotfix_on.cfg
+sun_e1m1.cfg
+sun_off.cfg
+sun_on.cfg
+uw_clear.cfg
+uw_mid.cfg
+uw_thick.cfg
+watersurface_big.cfg
+watersurface_fte.cfg
+watersurface_off.cfg
+watersurface_on.cfg
+watersurface_reflect.cfg
+watersurface_reflect2.cfg
+watersurface_reflect4.cfg
+watersurface_reflect_pair.cfg
+watersurface_reflect_off.cfg
+luma_on.cfg
+luma_soft.cfg
+luma_off.cfg
+fixturelights.cfg
+fixturelights_half.cfg
+fixturelights2.cfg
+fixturelights_off.cfg
+meshfix_on.cfg
+meshfix_off.cfg
+underreflect_on.cfg
+underreflect_off.cfg
+underreflect_full.cfg
+fizz_pick_off.cfg
+fizz_hybrid2.cfg
+fizz_stride2.cfg
+fizz_back.cfg
+
+[not-shipped]
+showreel.cfg      plays the developer's own recorded demos, which are not in the download
+showreel_ab.cfg   plays the developer's own recorded demos, which are not in the download
+rich.cfg          Seb's own recipe: the menu's Ultimate is its lighting; it also switches the eleven BEAUTY extras off, which no tier does
+rich_bare.cfg     Seb's own A/B partner to rich.cfg, kept in his userdir; the menu's tiers carry the look it priced

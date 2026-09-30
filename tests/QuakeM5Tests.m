@@ -74,6 +74,19 @@ static int gStatus = -1;          // its exit status (0 == all passed)
 - (void)testGIBounceFallback    { [self assertCheck:@"rt: bounce light fallback armed under validation"]; }
 - (void)testFroxelKernelsCompile { [self assertCheck:@"rt: froxel fog kernels compile under validation"]; }
 - (void)testFroxelVolumeAllocated { [self assertCheck:@"rt: froxel fog volume allocated"]; }
+- (void)testFroxelLimitHeld     { [self assertCheckOrSkipped:@"froxel: an over-limit fog buffer is held inside the 3D limit"]; }
+- (void)testFroxelLimitVolume   { [self assertCheckOrSkipped:@"froxel: the volume is created at the held size"]; }
+- (void)testFroxelLimitNoAbort  { [self assertCheckOrSkipped:@"froxel: no texture-descriptor abort"]; }
+- (void)testFroxelLimitSurvives { [self assertCheckOrSkipped:@"froxel: the over-limit boot reaches its quit"]; }
+// Run U (REVIEW 0.7): the kernels' 256-light cap ranks when it truncates.
+- (void)testLightCapRanks        { [self assertCheckOrSkipped:@"rt: the kernels' light cap ranks when it truncates (e3m4)"]; }
+- (void)testLightCapMapOrderAt0  { [self assertCheckOrSkipped:@"rt: the kernels' light cap reports map order at 0 (e1m8)"]; }
+// Run J7 (REVIEW 0.2): a frame with no drawable still commits its work.
+- (void)testNoDrawableHookEngaged         { [self assertCheck:@"metal: the no-drawable test hook engaged"]; }
+- (void)testNoDrawableCommits             { [self assertCheck:@"metal: a frame with no drawable commits its work"]; }
+- (void)testNoStaleCommandBuffer          { [self assertCheck:@"metal: no frame's command buffer outlives it"]; }
+- (void)testNoDrawableNoValidationFailure { [self assertCheck:@"metal: no validation failure with no drawable"]; }
+- (void)testNoDrawableFootprintFlat       { [self assertCheck:@"metal: memory stays flat with no drawable"]; }
 - (void)testPipeliningKickArmed  { [self assertCheck:@"rt: pipelining kick armed"]; }
 - (void)testASSkipStaticArmed    { [self assertCheck:@"rt: AS skip-static armed under validation"]; }
 - (void)testSoundDumpOpens       { [self assertCheck:@"snd: the mix dump opens under -simsound"]; }
@@ -92,6 +105,12 @@ static int gStatus = -1;          // its exit status (0 == all passed)
 - (void)testLiquidPairOn         { [self assertCheck:@"rt: liquid pair switched on (C2)"]; }
 - (void)testLiquidPairBLAS       { [self assertCheck:@"rt: blended liquid acceleration structure built"]; }
 - (void)testLiquidPairArmed      { [self assertCheck:@"rt: liquid pair armed at the slime (own term + reflection)"]; }
+- (void)testLiquidReflectionRippled { [self assertCheck:@"rt: liquid reflection rippled by the water surface (VKRT 1)"]; }
+- (void)testWaterSurfaceReflection { [self assertCheck:@"water: screen-space reflection armed on e1m1's slime (VKRT 1b)"]; }
+- (void)testSlipgateLuma          { [self assertCheck:@"slipgate luma: replacement glow layers lifted to the 1996 peak on start (VKRT 2)"]; }
+- (void)testFixtureLights         { [self assertCheck:@"rt: lamp fixtures gathered as lights on e1m1 (VKRT 3)"]; }
+- (void)testShadowLightsSmoothed  { [self assertCheck:@"rt: shadow lights smoothed (the chainmail fix)"]; }
+- (void)testSmoothedKernelBuilds  { [self assertCheck:@"rt: the smoothed kernel compiles"]; }
 - (void)testWaterSurfaceArmed    { [self assertCheck:@"water: surface refraction armed on e1m1's slime"]; }
 - (void)testSkyLightReadsADSun   { [self assertCheck:@"rt: the sky light reads AD's sun keys on start"]; }
 - (void)testGIDilatedCull       { [self assertCheck:@"rt: dilated bounce cull armed under validation"]; }
@@ -218,6 +237,9 @@ static int gStatus = -1;          // its exit status (0 == all passed)
 - (void)testPowerupGlow           { [self assertCheckOrSkipped:@"M5 powerups: the quad glows rather than spotlights"]; }
 - (void)testFogLightsampleFull    { [self assertCheckOrSkipped:@"rt: lightsample full mode engaged"]; }
 - (void)testTermUpsampleArmed     { [self assertCheckOrSkipped:@"rt: term upsample armed under validation"]; }
+// 2026-09-24 (REVIEW 0.6): the RT trace follows the raster's TAA jitter
+- (void)testRTJitterArmed         { [self assertCheckOrSkipped:@"rt: TAA jitter follows the raster under validation"]; }
+- (void)testRTJitterDormant       { [self assertCheckOrSkipped:@"rt: TAA jitter stands down without temporal"]; }
 - (void)testFogDumpWritten        { [self assertCheckOrSkipped:@"RT fog dump: rt_snapshot writes the fog buffer beside the frame"]; }
 - (void)testFogDumpParses         { [self assertCheckOrSkipped:@"RT fog dump: flicker.py parses the dump (metric live)"]; }
 - (void)testFogClampMode1         { [self assertCheckOrSkipped:@"rt: fog clamp mode 1 (min/max) engaged"]; }
@@ -268,6 +290,10 @@ static int gStatus = -1;          // its exit status (0 == all passed)
 // permutation number and no shader name -- and the still pair is the pixels.
 - (void)testTeleportSwirlPivot    { [self assertCheckOrSkipped:@"teleport swirl: the shipped pivot reaches the shader"]; }
 - (void)testTeleportSwirlChurn    { [self assertCheckOrSkipped:@"teleport swirl: churn rate moves the starfield (stills differ)"]; }
+// 2026-09-24 (REVIEW 0.4): the HUD brightness -- the change-only line, and the
+// two-sided still pair (the bar dims, the scene above it is byte-identical).
+- (void)testHUDBrightnessLine    { [self assertCheck:@"hud brightness: the change-only line reaches the frame"]; }
+- (void)testHUDBrightnessStills  { [self assertCheck:@"hud brightness: dims the in-game 2D and leaves the scene alone"]; }
 - (void)testTorchConeSoftness     { [self assertCheckOrSkipped:@"torch: cone softness reaches the kernel (stills differ)"]; }
 - (void)testBoltFizzArmed         { [self assertCheckOrSkipped:@"m5bolt: the fizz reaches the shader"]; }
 - (void)testEffectinfoParses      { [self assertCheckOrSkipped:@"effectinfo: m5/effectinfo.txt parses clean"]; }
@@ -287,6 +313,30 @@ static int gStatus = -1;          // its exit status (0 == all passed)
 // 2026-09-18: FXAA at native resolution after the MetalFX upscale. Its failure
 // mode is silent in the picture, so the armed line is the only evidence.
 - (void)testFXAAPostArms        { [self assertCheckOrSkipped:@"metal: FXAA runs at native resolution after the upscale"]; }
+// 2026-09-24 (REVIEW 0.8): the timedemo frame-time spread and the METAL_HITCH
+// census, both on run Z (skipped without demo16 or a ray-tracing device, hence
+// OrSkipped).
+- (void)testBenchFrameTimeSpread { [self assertCheckOrSkipped:@"demo16: the benchmark line carries the frame-time spread"]; }
+- (void)testHitchTimerCensus     { [self assertCheckOrSkipped:@"demo16: the hitch timer names first-use compiles"]; }
+// 2026-09-24 (REVIEW 0.5): the output dither, on its own validation boot (run
+// R2, Metal only, hence OrSkipped). The armed lines and the lockstep probe are
+// the only evidence: a refused re-key renders a correct frame with no upscale.
+- (void)testDitherValidationOn      { [self assertCheckOrSkipped:@"dither: validation is really on"]; }
+- (void)testDitherPresent           { [self assertCheckOrSkipped:@"dither: the present dithers the float screen under validation"]; }
+- (void)testDitherReportChangeOnly  { [self assertCheckOrSkipped:@"dither: the present report is change-only"]; }
+- (void)testDitherTemporalFloatOut  { [self assertCheckOrSkipped:@"dither: the temporal scaler re-keys to a float output"]; }
+- (void)testDitherSpatialFloatOut   { [self assertCheckOrSkipped:@"dither: the spatial scaler re-keys to a float output"]; }
+- (void)testDitherLockstep          { [self assertCheckOrSkipped:@"dither: the present and the readback dither in lockstep"]; }
+- (void)testDitherNoRefusal         { [self assertCheckOrSkipped:@"dither: no upscale refusal on the float screen"]; }
+// 2026-09-24 (REVIEW 0.3): the r_hdr_displayfit inverse round-trips through
+// the analytic curve. Run K is a GL boot on every machine, so not skipped.
+- (void)testGammaDisplayFitInverts   { [self assertCheck:@"gamma: display fit inverts the analytic curve"]; }
+- (void)testGammaDisplayFitNeverMisses { [self assertCheck:@"gamma: display fit never misses the ceiling"]; }
+
+// 2026-09-24: the shader pre-warm (r_shaderwarm) -- the shipped list compiles at the
+// first 3D frame, the learned list is written beside the config at quit.
+- (void)testShaderWarmCompiles       { [self assertCheck:@"shaders: the warm list compiles at the first 3D frame"]; }
+- (void)testShaderWarmLearnedWritten { [self assertCheck:@"shaders: the learned list is written beside the config"]; }
 
 // Backstop: the script's own overall verdict.
 - (void)testSuiteExitStatus

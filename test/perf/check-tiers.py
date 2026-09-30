@@ -170,7 +170,7 @@ EXPECT_DIFFERS = {
     # "lacking the detail and clumpiness" -- the pick IS that structure), Better's
     # history and steps went to the values he judged, and the top three march 24
     # steps again. The afternoon's arms invert into the revert controls.
-    'tier_better_ls0':   (T['Better'], {'rt_metal_lightsample': 0},
+    'tier_better_ls1':   (T['Better'], {'rt_metal_lightsample': 1},
                           'Better with ONLY the fog light pick off -- the revert control'),
     'tier_better_prev0906': (T['Better'], {'rt_metal_fog_froxel': 0,  # historical: the 2D fog history until 2026-09-07
                          'rt_metal_lightsample': 0, 'rt_metal_fog_history': 0.8,
@@ -210,7 +210,7 @@ EXPECT_DIFFERS = {
                          'rt_metal_lightsample': 0, 'rt_metal_fog_steps': 16,
                               'rt_metal_fog_residual': 0.25, 'rt_metal_fog_filter': 2},
                           'Best as it shipped on the 2026-09-06 afternoon -- the full revert'),
-    'tier_best_ls0':     (T['Best'], {'rt_metal_lightsample': 0},
+    'tier_best_ls1':     (T['Best'], {'rt_metal_lightsample': 1},
                           "Best with the fog light pick OFF (the 2026-09-06 afternoon cell) -- the revert control"),
     # SEPTEMBER2 A5 (2026-09-08): the froxel priced on each tier that carries it (the 2026-09-07
     # default flip owed a soaked block), and the pick's cheaper forms under the froxel.
@@ -232,7 +232,7 @@ EXPECT_DIFFERS = {
                               'Ultimate at the PRE-A5 alternating hybrid 2 -- the revert of the single-pass pick (wired 2026-09-13)'),
     'tier_ultimate_stride2': (T['Ultimate'], {'rt_metal_fog_stride': 2},
                               'Ultimate at the PRE-A5 cast stride 2 -- the revert (wired 4 on 2026-09-13)'),
-    'tier_ultimate_ls0':     (T['Ultimate'], {'rt_metal_lightsample': 0},
+    'tier_ultimate_ls1':     (T['Ultimate'], {'rt_metal_lightsample': 1},
                               'Ultimate with the fog light pick OFF (A5 ceiling for the pick)'),
     'tier_best_0821':    (T['Best'], {'rt_metal_fog_froxel': 0,  # historical: the 2D fog history until 2026-09-07
                          'rt_metal_gi': 0, 'rt_metal_lightsample': 0,
@@ -274,14 +274,16 @@ EXPECT_DIFFERS = {
     # --- phase AA, the 2026-09-19 AA retier's live controls (bed demo48) ---------
     'tier_ultimate_now':      (T['Ultimate'], {},
                               'the shipped Ultimate on the phase-AA bed -- the paired reference'),
-    'tier_ultimate_prev0919': (T['Ultimate'], {'rt_metal_shadowlights': 1, 'rt_metal_scale': 0.375, 'r_viewscale': 1,
+    'tier_ultimate_prev0919': (T['Ultimate'], {'rt_metal_shadowlights_smooth': 0, 'rt_metal_fixturelights': 0, 'rt_metal_lightsample': 1, 'rt_metal_shadowlights': 1, 'rt_metal_scale': 0.375, 'r_viewscale': 1,
                               'rt_metal_samples': 6, 'rt_metal_fog_scale': 0.25, 'r_smaa': 0,
                               'rt_metal_fog_froxel_slices': 48},
                               'Ultimate as it shipped up to 2026-09-18 -- the full revert control'),
-    'tier_best_prev0919':     (T['Best'], {'rt_metal_shadowlights': 1, 'rt_metal_scale': 0.3125, 'r_viewscale': 0.667,
+    'tier_best_prev0919':     (T['Best'], {'rt_metal_shadowlights_smooth': 0, 'rt_metal_fixturelights': 0, 'rt_metal_lightsample': 1, 'rt_metal_shadowlights': 1, 'rt_metal_scale': 0.3125, 'r_viewscale': 0.667,
                               'rt_metal_samples': 4, 'rt_metal_fog_scale': 0.375, 'r_smaa': 0,
                               'rt_metal_fog_froxel_slices': 48},
                               'Best as it shipped up to 2026-09-18 -- the tier Seb actually played'),
+    'tier_ultimate_slices32': (T['Ultimate'], {'rt_metal_fog_froxel_slices': 32},
+                              'Ultimate at the 2026-09-19 slice count -- the revert control for the 2026-09-28 cell'),
     'tier_ultimate_smaa0':    (T['Ultimate'], {'r_smaa': 0},
                               'the new Ultimate with MLAA off -- prices the AA pass at the new geometry'),
     'tier_ultimate_fxaa1':    (T['Ultimate'], {'r_fxaa': 1},

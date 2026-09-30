@@ -41,6 +41,10 @@
 #       kernel + filter modes + liquids sampler + analytic gamma + a spatial
 #       re-key
 #   J6  the frame-pool leak rate net (heap sampling, 25 s)
+#   J7  a frame with no drawable still commits its work (the occlusion leak's net, ~32 s)
+#   F3D the froxel fog volume past Metal's 3D-texture limit is held, not aborted
+#   U   the kernels' 256-light cap ranks when it truncates (e3m4, cull opened)
+#   R2  the output dither: own validation boot, both scalers re-keyed to a float output, the present/readback lockstep
 #   J2  a 2D frame reaches the drawable (VID_METAL_PROBE)
 #   RT  the cross-backend term-buffer identity (two boots by necessity)
 #   L   the emissive liquid instance (e1m1 slime)
@@ -48,6 +52,7 @@
 #   N   the SDF bolt reaches the screen
 #   O   e1m7: the lava crust flows (absorbed D3) + the heat haze marches
 #   M   the KH swirl stills (one frozen boot, four shots, cleared notify)
+#   HUD the HUD brightness pair (own frozen boot, two shots): the bar dims, the scene above it stays byte-identical
 #   T   the torch: envelope/backstop/colour + the lamp lights the room
 #       (one frozen boot, two shots)
 # (The number of checks is NOT recorded here on purpose: it was hand-maintained,
@@ -204,6 +209,12 @@ $DP -window -nosound +developer 1 +map dm4 +exec smoketest_b.cfg >"$LOG_B" 2>&1
 check "gore preset 2 applies quality 3"    "quality.* is \"3\""        "$LOG_B"
 check "gore preset 0 restores quality 1"   "quality.* is \"1\""        "$LOG_B"
 check "Doom shotgun QuakeC branch fires"   "M5 boomstick fired"        "$LOG_B"
+# SHADER PRE-WARM (2026-09-24): the shipped warm list compiles at the first 3D frame,
+# and the session's own compiles are written beside the config at quit. Both are
+# positive checks: a boot that never warmed and a save that never wrote both read
+# as silence, and silence is what the feature's failures look like.
+check  "shaders: the warm list compiles at the first 3D frame" "shaders: pre-warmed [1-9][0-9]* permutation" "$LOG_B"
+check  "shaders: the learned list is written beside the config" "^[0-9]+ [0-9a-f]+" "$SANDBOX/m5/shaderwarm_learned.txt"
 # SEPTEMBER S5 step 2: the sprite's off arm is a QuakeC branch with no other
 # textual evidence. A rocket is fired at 15.6 with the cvar at 0 and god on;
 # the print is first-event per map. The cvar is CF_ARCHIVE and run B shares
@@ -858,6 +869,7 @@ PTSEOF
 	LOG_Q=$(mktemp); SANDBOX_Q=$(mktemp -d)
 	cat > m5/smoketest_q.cfg <<'EOF'
 r_metalfx 2
+rt_metal_jitter 1
 r_viewscale 0.667
 r_viewfbo 2
 r_volumetric 1
@@ -1100,6 +1112,12 @@ check  "RT: the extra lights can be switched off" "RT shadow lights: the dominan
 	# validation boot (r_viewfbo 2 makes the depth sampleable here). The armed
 	# line is change-only in RT_SceneComposite.
 	check  "rt: term upsample armed under validation"     "RT term upsample armed"          "$LOG_Q"
+	# REVIEW 0.6: the trace follows the raster's TAA jitter -- armed under
+	# temporal + same-frame (the Cam grew 16 bytes, and the jittered arm, the
+	# history compensation and the plane test all run under validation), then
+	# dormant once r_metalfx 1 takes the jitter away at 11 s
+	check  "rt: TAA jitter follows the raster under validation" "RT jitter armed"   "$LOG_Q"
+	check  "rt: TAA jitter stands down without temporal"       "RT jitter dormant" "$LOG_Q"
 	# WARCHEST session 2: the refit engages on this boot (entities present,
 	# rt_metal_refit defaults 1) and the whole boot runs under validation.
 	check  "rt: dynamic BLAS refit engages under validation" "RT refit active"                 "$LOG_Q"
@@ -1218,6 +1236,35 @@ EOF
 	fi
 	rm -f "$LOG_J" m5/smoketest_j6.cfg; rm -rf "$SANDBOX_J"
 
+	# --- run J7: a frame with no drawable still commits its work (REVIEW 0.2) ---
+	# When nextDrawable returned nil (occluded or minimised window, display
+	# asleep) the frame's command buffer was never committed and every later
+	# frame appended to it, pinning each frame's orphaned dynamic buffers:
+	# measured ~13 MB/s at 30 fps under validation. Every other headless bed
+	# presents every frame, so nothing else can see it. METAL_TEST_NODRAWABLE
+	# withholds the drawable on 1000 frames of every 1001 -- the occluded path
+	# without occluding a window -- and prints the footprint every 5 s.
+	# Measured discrimination (the fix's own bed, 2026-09-24): unfixed +195 MB
+	# between t=10 and t=25; fixed 0 to -1 MB. The limit sits at a quarter of
+	# the leak. Fewer than two readings FAILS (the vacuous-bed rule).
+	LOG_J=$(mktemp); SANDBOX_J=$(mktemp -d)
+	METAL_TEST_NODRAWABLE=1000 METAL_DEVICE_WRAPPER_TYPE=1 ./darkplaces-sdl -userdir "$SANDBOX_J" -window -nosound \
+		+vid_renderer metal +developer 1 +cl_maxfps 30 +cl_maxidlefps 30 +map e1m3 +defer 30 quit >"$LOG_J" 2>&1
+	check  "metal: the no-drawable test hook engaged"         "METAL_TEST_NODRAWABLE=1000" "$LOG_J"
+	check  "metal: a frame with no drawable commits its work" "no drawable this frame; its work was committed without a present" "$LOG_J"
+	absent "metal: no frame's command buffer outlives it"     "committed GPU work still open when this frame began" "$LOG_J"
+	absent "metal: no validation failure with no drawable"    "failed assertion|missing Sampler binding|missing texture binding|incorrect type of texture|Engine Crash|Segmentation" "$LOG_J"
+	J7MAX=48
+	J7GROW=$(awk '$1=="METAL_TEST_NODRAWABLE" && $2=="footprint" && $3+0>=10 { if (n==0) f=$4; l=$4; n++ } END { if (n>=2) print l-f }' "$LOG_J")
+	if [ -z "$J7GROW" ]; then
+		failt "metal: memory stays flat with no drawable"; echo "  (fewer than two footprint readings after 10 s -- the bed did not run)"
+	elif [ "$J7GROW" -le "$J7MAX" ]; then
+		pass  "metal: memory stays flat with no drawable"; echo "  (footprint 10 s -> end: ${J7GROW} MB, limit ${J7MAX})"
+	else
+		failt "metal: memory stays flat with no drawable"; echo "  (footprint grew ${J7GROW} MB with the drawable withheld -- the uncommitted-frame leak is back)"
+	fi
+	rm -f "$LOG_J"; rm -rf "$SANDBOX_J"
+
 	# METAL.md Phase 3 slice 4: a real 2D frame reaches the drawable. This check
 	# is not synthetic -- its failure mode was observed for real during the
 	# slice, when one un-folded switch in R_DrawModelTextureSurfaceList left the
@@ -1330,6 +1377,13 @@ EOF
 	check  "gamma: analytic curve matches the LUT"      "gamma analytic: MATCHES the LUT"   "$LOG_K"
 	absent "gamma: analytic curve never diverges"       "DIVERGES from the LUT"             "$LOG_K"
 	absent "gamma: analytic stays available"            "NOT AVAILABLE"                     "$LOG_K"
+	# REVIEW 0.3: the r_hdr_displayfit inverse, round-tripped through the forward
+	# curve at SDR white and two HDR grants. The colour-control state is the one
+	# with teeth -- three channels, three inverses, and only the MIN lands the
+	# brightest channel on the ceiling. Printed once per state; the absent check
+	# covers both.
+	check  "gamma: display fit inverts the analytic curve" "display fit INVERTS the curve" "$LOG_K"
+	absent "gamma: display fit never misses the ceiling"   "display fit BROKEN"            "$LOG_K"
 	if [ ! -f "$SANDBOX_K/m5/config.cfg" ]; then
 		failt "metal: vid_renderer gl persists (no config.cfg written - run too short?)"
 	elif grep -q '"vid_renderer" "gl"' "$SANDBOX_K/m5/config.cfg"; then
@@ -1437,6 +1491,39 @@ CFGEOF
 	absent "smaa: no intermediate target was refused"     "r_smaa: no intermediate render target" "$LOG_R"
 	rm -f "$LOG_R"; rm -rf "$SANDBOX_R"
 
+	# --- run R2: the output dither (r_dither, REVIEW 0.5) ---------------------
+	# ITS OWN VALIDATION BOOT, not run R's: turning r_dither on re-creates the
+	# screen texture and synchronously re-mints the MetalFX scaler, the exact
+	# stall run R's own header records compressing a whole tail of defers. With
+	# r_edr 0 the float screen meets an 8-bit drawable at the present, which is
+	# where it dithers; the temporal scaler (at boot) and then the spatial one
+	# (at 11 s) must re-key to a float OUTPUT, or MetalFX refuses the encode and
+	# the frame falls back to NO upscale -- silent and faster, the worst failure
+	# shape this tree records, hence the widened absent pattern. VID_METAL_PROBE
+	# reads the presented frame back at frame 120 and compares it with the CPU
+	# readback dither of the same float screen: the LOCKSTEP line is the proof
+	# the MSL hash and the C hash are one hash. ITS OWN USERDIR (archived cvars).
+	SANDBOX_R2=$(mktemp -d); mkdir -p "$SANDBOX_R2/m5"
+	cat > "$SANDBOX_R2/m5/smoketest_r2.cfg" <<'CFGEOF'
+defer 11 "r_metalfx 1"
+defer 15 "r_dither 0"
+defer 18 "quit"
+CFGEOF
+	LOG_R2=$(mktemp)
+	METAL_DEVICE_WRAPPER_TYPE=1 VID_METAL_PROBE=1 ./darkplaces-sdl -userdir "$SANDBOX_R2" -window -nosound +developer 1 +vid_renderer metal +r_edr 0 +r_dither 1 +r_viewfbo 2 +r_viewscale 0.667 +r_metalfx 2 +r_smaa 1 +rt_metal 1 +exec smoketest_r2.cfg +map e1m3 >"$LOG_R2" 2>&1
+	check  "dither: validation is really on"                     "Metal API Validation Enabled" "$LOG_R2"
+	check  "dither: the present dithers the float screen under validation" "r_dither: the present dithers the float screen into the 8-bit drawable" "$LOG_R2"
+	if [ "$(grep -c 'r_dither: the present dithers' "$LOG_R2")" = "1" ]; then
+		pass "dither: the present report is change-only"
+	else
+		failt "dither: the present report is change-only"
+	fi
+	check  "dither: the temporal scaler re-keys to a float output" "MetalFX: temporal scaler [0-9]+x[0-9]+ -> [0-9]+x[0-9]+ \(RGBA16F, sdr, float out\)" "$LOG_R2"
+	check  "dither: the spatial scaler re-keys to a float output"  "MetalFX: spatial scaler [0-9]+x[0-9]+ -> [0-9]+x[0-9]+ \(RGBA16F, perceptual, float out\)" "$LOG_R2"
+	check  "dither: the present and the readback dither in lockstep" "VID_METAL_PROBE dither: .* -> LOCKSTEP" "$LOG_R2"
+	absent "dither: no upscale refusal on the float screen"      "MetalFX: temporal encode refused|MetalFX: encode refused|post-upscale FXAA target was refused|exceeds the screen texture|exceeds the pooled render-target usage|factory refused" "$LOG_R2"
+	rm -f "$LOG_R2"; rm -rf "$SANDBOX_R2"
+
 	# --- run T: the liquid's own light (SEPTEMBER2 C1, 2026-09-06) -------------
 	# Its line fires only when a BLENDED liquid batch is drawn with the RT term
 	# live, and run Q's spawn camera on e1m3 draws none -- a check there was
@@ -1444,6 +1531,12 @@ CFGEOF
 	# spawn (measured too, twice); the camera is demo19's at its f4900 -- the slime
 	# hall, eye 1080 2209 -337 looking 28.6 degrees down at yaw 79 -- set under
 	# noclip (origin sticks only while noclip is on: the documented headless rule).
+	# The camera lands at 9-10 s, not 5-6 (2026-09-28): under load, or with the
+	# replacement packs, e1m1 takes longer than two seconds to load, and a cheat
+	# sent before the player exists is dropped -- every shot was then the spawn
+	# hall and all five checks failed together (the whole suite's run under load
+	# read exactly that). The yaw is not delivered on this bed either way; the
+	# origin and the pitch are what aim it.
 	cat > m5/smoketest_t.cfg <<'CFGEOF'
 rt_metal 1
 rt_metal_walllight 0.8
@@ -1452,14 +1545,16 @@ r_wateralpha_force 1
 rt_metal_liquids 0.45
 rt_metal_liquids_own 1
 rt_metal_liquids_rt 1
+rt_metal_liquids_ripple 1
 r_watersurface 1
+r_watersurface_reflect 1
 defer 3 "map e1m1"
-defer 5 "sv_cheats 1"
-defer 5.5 "noclip"
-defer 6 "prvm_edictset server 1 origin \"1080 2209 -359\""
-defer 6.1 "prvm_edictset server 1 v_angle \"28.6 79.2 0\""
-defer 6.2 "prvm_edictset server 1 fixangle 1"
-defer 11 "quit"
+defer 9 "sv_cheats 1"
+defer 9.5 "noclip"
+defer 10 "prvm_edictset server 1 origin \"1080 2209 -359\""
+defer 10.1 "prvm_edictset server 1 v_angle \"28.6 79.2 0\""
+defer 10.2 "prvm_edictset server 1 fixangle 1"
+defer 15 "quit"
 CFGEOF
 	LOG_T=$(mktemp)
 	$DP -window -nosound +developer 1 +vid_renderer metal +exec smoketest_t.cfg >"$LOG_T" 2>&1
@@ -1470,6 +1565,27 @@ CFGEOF
 	check  "rt: liquid pair switched on (C2)"                 "RT liquid pair ON" "$LOG_T"
 	check  "rt: blended liquid acceleration structure built"  "built BLENDED liquid acceleration structure" "$LOG_T"
 	check  "rt: liquid pair armed at the slime (own term + reflection)" "RT liquid pair armed" "$LOG_T"
+	# VKRT slice 1 (2026-09-25): the rippled reflection's change-only line. It fires only
+	# on a frame the pair is LIVE and says "rippled" only with r_watersurface on -- the
+	# ripple is the surface's own (the shader reads wsdisp under USEWATERSCREEN), and a
+	# ripple asked for without the surface reports itself as flat, by name. The cfg head
+	# sets both; a boot that lost either would print a different line and fail here.
+	check  "rt: liquid reflection rippled by the water surface (VKRT 1)" "RT liquid reflection: rippled by the water surface" "$LOG_T"
+	# VKRT 1b (2026-09-27): the screen-space reflection's change-only line on the same bed.
+	# It fires only on a liquid batch drawn with a scene depth this frame, and says
+	# "screen-space" only when the gain is above 0 and the depth is there -- a gain asked
+	# for with no depth reports itself as off, by name, and would fail here.
+	check  "water: screen-space reflection armed on e1m1's slime (VKRT 1b)" "water surface reflection: screen-space" "$LOG_T"
+	# VKRT slice 3 (2026-09-28): e1m1's base is the map with the lamp fixtures (59
+	# cells in its table). The gather runs in the world walk whatever the cvar says,
+	# so this proves the walk finds them; a 0 (the table emptied, or the walk
+	# skipping surfaces) FAILS.
+	check  "rt: lamp fixtures gathered as lights on e1m1 (VKRT 3)" "RT: [1-9][0-9]* fixture lights gathered" "$LOG_T"
+	# 2026-09-29, the chainmail fix: RT_RUPSMOOTH is a compiled-in variant of rt_trace, so
+	# the setter's line is its only textual evidence, and a kernel that failed to build
+	# with the define would fall back silently to the previous pipeline.
+	check  "rt: shadow lights smoothed (the chainmail fix)" "RT shadow lights: smoothed" "$LOG_T"
+	absent "rt: the smoothed kernel compiles" "kernel compile failed" "$LOG_T"
 	# WATERSURFACE (2026-09-12): the screen-space refraction on the same bed -- its
 	# static parm appears in no permutation number and no shader name, so the
 	# first-event line is its only console evidence; and this boot compiles it
@@ -1577,13 +1693,24 @@ rt_metal_fog_filter 2
 r_gamma_analytic 1
 v_gamma 0.5
 EOF
-		./darkplaces-sdl -userdir "$SANDBOX_Z" -window -nosound -benchmark demo16.dem >"$LOG_Z" 2>&1
+		# METAL_HITCH=0.001 (2026-09-24, REVIEW 0.8): the first-use stall
+		# reporter as a census (0 or unset is OFF, the house convention) --
+		# stderr only, so nothing this run renders or asserts moves
+		METAL_HITCH=0.001 ./darkplaces-sdl -userdir "$SANDBOX_Z" -window -nosound -benchmark demo16.dem >"$LOG_Z" 2>&1
 		if grep -q "RT_Metal: device" "$LOG_Z"; then
 			if grep -qE "result [0-9]+ frames" "$SANDBOX_Z/m5/benchmark.log" 2>/dev/null; then
 				pass "demo16: the playback completes with a result line"
 			else
 				failt "demo16: the playback completes with a result line"
 			fi
+			# REVIEW 0.8: the frame-time distribution the one-second minimum
+			# cannot show. The p50 group must be NON-zero -- a sampler that never
+			# ran still writes "p50 0.00 ... max 0.00", which a looser pattern
+			# would pass vacuously.
+			check  "demo16: the benchmark line carries the frame-time spread" "\| ft p50 [0-9.]*[1-9][0-9.]* p95 [0-9.]+ p99 [0-9.]+ p99\.9 [0-9.]+ max [0-9.]+ ms, >2x median [0-9]+, >33ms [0-9]+$" "$SANDBOX_Z/m5/benchmark.log"
+			# and the census names first-use compiles (no ^ anchor: a stdout
+			# partial line can precede a stderr line in the shared log)
+			check  "demo16: the hitch timer names first-use compiles" "HITCH msl [0-9.]+ ms frame [0-9]+ mode [0-9]+ perm [0-9a-f]+" "$LOG_Z"
 			check  "demo16: the RT composite is live"           "composite viewmodel mask ACTIVE" "$LOG_Z"
 			check  "demo16: the fog kernel owns the murk"       "RT fog kernel ACTIVE"            "$LOG_Z"
 			# the weapon's RT-matched light (2026-08-21): its first-event
@@ -1620,6 +1747,50 @@ EOF
 		echo "SKIP: emissive liquid instance (no Metal ray-tracing device available)"
 	fi
 	rm -f "$LOG_L"; rm -rf "$SANDBOX_L"
+
+	# --- run F3D: the froxel fog volume past Metal's 3D-texture limit (REVIEW 0.1)
+	# Both 2026-09-18 crashes were ONE frame: the froxel volume is fog-buffer
+	# width x height x slices, a Metal 3D texture may not exceed 2048 on any axis,
+	# and Metal's texture-descriptor validation is ALWAYS on -- an oversized
+	# descriptor abort()s a release build. 640x480 at r_viewscale 4 with the fog
+	# buffer at full scale asks for 2560x1920; the engine must hold it at
+	# 2048x1536 (aspect kept), build the volume at that size and keep running.
+	# Four slices keep the volumes to ~400 MB. Its OWN userdir (archived cvars).
+	SANDBOX_F3D=$(mktemp -d)
+	LOG_F3D=$(mktemp)
+	./darkplaces-sdl -userdir "$SANDBOX_F3D" -window -nosound +developer 1 +vid_renderer metal \
+		+rt_metal 1 +r_volumetric 1 +rt_metal_fog 1 +rt_metal_fog_froxel 1 +rt_metal_fog_froxel_slices 4 \
+		+rt_metal_fog_scale 1 +r_viewscale 4 +map e1m3 \
+		+defer 9 "echo FROXEL-LIMIT-END" +defer 9.5 quit >"$LOG_F3D" 2>&1
+	if grep -qE "RT_Metal: device '.*' ready" "$LOG_F3D"; then
+		check  "froxel: an over-limit fog buffer is held inside the 3D limit" "RT froxel fog: fog buffer held at 2048x1536" "$LOG_F3D"
+		check  "froxel: the volume is created at the held size" "RT froxel fog volume 2048x1536x4 " "$LOG_F3D"
+		absent "froxel: no texture-descriptor abort" "failed assertion|Texture Descriptor Validation|froxel fog volume .* refused|texture [0-9]+x[0-9]+ refused" "$LOG_F3D"
+		check  "froxel: the over-limit boot reaches its quit" "FROXEL-LIMIT-END" "$LOG_F3D"
+	else
+		echo "SKIP: froxel 3D-limit hold (no Metal ray-tracing device available)"
+	fi
+	rm -f "$LOG_F3D"; rm -rf "$SANDBOX_F3D"
+
+	# --- run U: the kernels' 256-light cap ranks when it truncates (REVIEW 0.7) --
+	# The cap is GLOBAL on upload order (rt_metal.h), so on a map with more lights
+	# in range than 256 the old cut fell in MAP order. e3m4 lists 439 map lights;
+	# with the cull opened to the whole map every one is in range, so the cap is
+	# crossed deterministically at the spawn and the ranked report must print.
+	# Then e1m8 (283 lights) at rt_metal_lightrank 0 must report the map-order
+	# cut -- a map CHANGE, because a reload of the same map reuses the world model
+	# and would not bump the once-per-map key. Own userdir: both cvars archived.
+	SANDBOX_U=$(mktemp -d)
+	LOG_U=$(mktemp)
+	./darkplaces-sdl -userdir "$SANDBOX_U" -window -nosound +developer 1 +rt_metal 1 +rt_metal_culldist 100000 \
+		+map e3m4 +defer 12 "rt_metal_lightrank 0; map e1m8" +defer 24 quit >"$LOG_U" 2>&1
+	if grep -qE "RT_Metal: device '.*' ready" "$LOG_U"; then
+		check "rt: the kernels' light cap ranks when it truncates (e3m4)" "RT lights: [0-9]+ in range, the kernels hold 256 -- ranked" "$LOG_U"
+		check "rt: the kernels' light cap reports map order at 0 (e1m8)"  "RT lights: [0-9]+ in range, the kernels hold 256 -- map order" "$LOG_U"
+	else
+		echo "SKIP: kernel light cap (no Metal ray-tracing device available)"
+	fi
+	rm -f "$LOG_U"; rm -rf "$SANDBOX_U"
 
 	# --- run P: blue-noise kernel jitter (rt_metal_bluenoise, the weave fix) ---
 	# Its OWN throwaway userdir (archived cvar, the run-L persistence trap). Two
@@ -1840,6 +2011,7 @@ r_drawviewmodel 0
 r_waterscroll 0
 r_teleportswirl 1
 r_teleportswirl_churn 1
+m5_lumacalibrate 1
 defer 3.0 "noclip"
 defer 4.0 "prvm_edictset server 1 origin \"544 1284 48\""
 defer 6.0 "clear"
@@ -1851,6 +2023,11 @@ defer 12.5 quit
 EOF
 ./darkplaces-sdl -userdir "$SANDBOX_M" -window -nosound +developer 1 +sv_freezenonclients 1 +exec smoketest_m2.cfg +map start >>"$LOG_M" 2>&1
 check  "teleport swirl: the shipped pivot reaches the shader" "teleport swirl: pivot none" "$LOG_M"
+# VKRT slice 2: start.bsp is the map with the slipgates, and QRP (m5/*.pk3) is the
+# pack whose lumas the calibration lifts -- a rescaled layer looks like any other
+# glow layer, so the per-map count is the feature's only textual evidence. A count
+# of 0 (the pack absent, or the hint never reaching the loader) FAILS.
+check  "slipgate luma: replacement glow layers lifted to the 1996 peak on start (VKRT 2)" "M5 luma: [1-9][0-9]* replacement glow layers rescaled" "$LOG_M"
 if [ -f "$SANDBOX_M/m5/m_tel1.tga" ] && [ -f "$SANDBOX_M/m5/m_tel8.tga" ]; then
 	if cmp -s "$SANDBOX_M/m5/m_tel1.tga" "$SANDBOX_M/m5/m_tel8.tga"; then
 		failt "teleport swirl: churn rate moves the starfield (stills differ)"
@@ -1867,6 +2044,68 @@ fi
 #  non-trivial v_gamma), which is both the ceiling bed AND the abort net in
 #  one, since validation traps a short bind at the first draw.)
 rm -f "$LOG_M"; rm -rf "$SANDBOX_M"
+
+# --- run HUD: the HUD brightness (r_hud_brightness, REVIEW 0.4) -------------
+# Its OWN sandbox (never run M's -- an earlier boot's archived cvars would ride
+# in). The frozen e1m3 bed at viewsize 100, so the status bar is in frame; the
+# frozen clock pins sv.time, the lightstyles and the idle sway's ramp (a cl.time
+# delta), so the scene cannot move between the shots. One still at 1 and one at
+# 0.5, each with its own clear a second before (the screenshot captures the
+# PREVIOUS frame), and con_notify 0 so no notify line can differ between them.
+# TWO-SIDED on purpose: the status bar (the bottom 5% of rows) must change AND
+# the scene band above it (10%-80% of the height) must be byte-identical. The 2D
+# pass hands its scale through r_refdef.view.colorscale, and the second half is
+# the standing net that it never reaches the 3D render. Fail-first: on the
+# pre-change binary the stills are identical and both checks fail.
+SANDBOX_HUD=$(mktemp -d)
+LOG_HUD=$(mktemp)
+mkdir -p "$SANDBOX_HUD/id1"
+cat > "$SANDBOX_HUD/id1/smoketest_hud.cfg" <<'EOF'
+scr_screenshot_jpeg 0
+showfps 0
+showtime 0
+showdate 0
+showbrand 0
+con_notify 0
+cl_nettimesyncfactor 1
+cl_nettimesyncboundmode 1
+sv_random_seed 1
+rt_metal_sameframe 0
+vid_vsync 0
+r_drawentities 0
+r_drawviewmodel 0
+r_drawdecals 0
+cl_particles 0
+viewsize 100
+crosshair 0
+r_volumetric 0
+rt_metal 0
+r_hud_brightness 1
+defer 5 "clear"
+defer 6 "screenshot m_hud1.tga"
+defer 6.5 "r_hud_brightness 0.5"
+defer 7.5 "clear"
+defer 8.5 "screenshot m_hud05.tga"
+defer 9 "r_hud_brightness 1"
+defer 10 quit
+EOF
+./darkplaces-sdl -userdir "$SANDBOX_HUD" -window -nosound +developer 1 +sv_freezenonclients 1 +exec smoketest_hud.cfg +map e1m3 >"$LOG_HUD" 2>&1
+check "hud brightness: the change-only line reaches the frame" "HUD brightness 0\.50" "$LOG_HUD"
+if [ -f "$SANDBOX_HUD/m5/m_hud1.tga" ] && [ -f "$SANDBOX_HUD/m5/m_hud05.tga" ]; then
+	if python3 -c "
+import sys; sys.path.insert(0, 'test'); import tgacmp
+wa, ha, pa, ra = tgacmp.load(sys.argv[1]); wb, hb, pb, rb = tgacmp.load(sys.argv[2])
+scene = (wa, ha) == (wb, hb) and all(ra[y] == rb[y] for y in range(int(ha * 0.10), int(ha * 0.80)))
+bar = any(ra[y] != rb[y] for y in range(int(ha * 0.95), ha))
+sys.exit(0 if scene and bar else 1)" "$SANDBOX_HUD/m5/m_hud1.tga" "$SANDBOX_HUD/m5/m_hud05.tga" 2>/dev/null; then
+		pass "hud brightness: dims the in-game 2D and leaves the scene alone"
+	else
+		failt "hud brightness: dims the in-game 2D and leaves the scene alone"
+	fi
+else
+	failt "hud brightness: dims the in-game 2D and leaves the scene alone (stills missing)"
+fi
+rm -f "$LOG_HUD"; rm -rf "$SANDBOX_HUD"
 
 echo
 # --- run P: the bad torch (F6) ----------------------------------------------

@@ -31,8 +31,8 @@ git archive HEAD | tar -x -C "$TMP"
 
 # --- the private working log stays private ---------------------------------------
 for f in CLAUDE.md BALLLIGHTNING.md BEAUTY.md BEAUTYBENCH.md BLUENOISE.md FOGLIGHT.md \
-         GIARC.md LIQUIDFOG.md PERFPLAN.md ROADMAP.md RELEASE.md SEPTEMBER.md \
-         SEPTEMBER2.md SMAA.md WARCHEST.md WATERSURFACE.md impulse_mapping.txt \
+         GIARC.md LIQUIDFOG.md PERFPLAN.md ROADMAP.md RELEASE.md REVIEW.md SEPTEMBER.md \
+         SEPTEMBER2.md SMAA.md VKRT.md WARCHEST.md WATERSURFACE.md impulse_mapping.txt \
          metal/async-plan.md release/public-repo \
          WATERSURFACE-redesign.patch \
          m5/showreel.cfg m5/showreel_ab.cfg m5/showreel_check.cfg; do
@@ -75,5 +75,8 @@ if [ ! -d "$DEST/.git" ]; then
 	echo "== initialised a fresh git repository (branch main, no remote)"
 fi
 git -C "$DEST" add -A
+# the recipes are force-added here as in the private tree (/m5/* is ignored): add them by
+# name, or the public repository silently lacks every recipe its own guide names
+git -C "$DEST" add -f -- $(cd "$DEST" && python3 release/check-recipes.py --list | sed 's|^|m5/|')
 echo "== $DEST is ready. Staged, NOT committed, NOT pushed:"
 git -C "$DEST" status --short | wc -l | awk '{print "   " $1 " changed paths"}'

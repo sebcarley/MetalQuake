@@ -59,8 +59,30 @@ APP="$OUT/MetalQuake.app"
 STAMP=$(date +%Y%m%d)
 
 echo "== building the engine (make sdl-release)"
-make sdl-release -j8 >/dev/null
+# SYMBOLS ARE KEPT FIRST (REVIEW 0.9). makefile.inc's bin-release strips the binary it
+# links; STRIP=true defers that, so the unstripped link lands in release/symbols/<UUID>/
+# before the SAME `strip` runs on the SAME file here. strip, install_name_tool and
+# codesign all leave LC_UUID alone, and the UUID is asserted on the shipped binary
+# below. The two 2026-09-18 aborts could not be read for want of exactly this. The
+# release objects carry no -g, so this is function-level (atos over the symbol table);
+# line numbers would need -g and a clean object dir (it is keyed on build type, not
+# CFLAGS). THE LINK MUST RUN: when no object has changed, make reports the binary up to
+# date and relinks nothing, so the file on disk is the LAST build's -- already stripped
+# -- and STRIP=true alone keeps nothing (the first kept copy had 323 symbols and atos
+# could name no function). Removing the link output forces the link and nothing else.
+rm -f ./darkplaces-sdl
+make sdl-release -j8 STRIP=true >/dev/null
 [ -x ./darkplaces-sdl ] || { echo "no darkplaces-sdl after build"; exit 1; }
+# and prove it: a kept copy that cannot name a function is not a symbols copy
+nm ./darkplaces-sdl | grep -q ' T _Host_Frame$' \
+	|| { echo "FAIL: the linked engine carries no function symbols; nothing worth keeping"; exit 1; }
+UUID=$(dwarfdump --uuid ./darkplaces-sdl | awk 'NR==1{print $2}')
+[ -n "$UUID" ] || { echo "FAIL: no LC_UUID in the binary"; exit 1; }
+SYM="$REPO/release/symbols/$UUID"
+mkdir -p "$SYM"
+cp ./darkplaces-sdl "$SYM/MetalQuake"
+strip ./darkplaces-sdl
+echo "   symbols kept: release/symbols/$UUID/"
 # the QuakeC lane is content, not engine: build it if the compiler is present,
 # otherwise ship whatever m5/progs.dat is already there (and say which)
 if [ -x tools/fteqcc/fteqcc ]; then
@@ -168,13 +190,16 @@ if [ "$PUBLIC" = "1" ]; then
 	# ours, by name: the compiled GPL QuakeC, the effects data, the pack look files,
 	# and the recipe cfgs the guide refers to (not the showreels -- they play demos
 	# that are not shipped)
-	cp "$REPO/m5/progs.dat" "$REPO/m5/effectinfo.txt" "$OUT/packs/m5/"
-	for f in "$REPO"/m5/*.cfg; do
-		case "$(basename "$f")" in
-			config.cfg|showreel*.cfg|ab[0-9]*.cfg|ab_stop.cfg|seb_*.cfg|fixup*.cfg) ;;
-			*) cp "$f" "$OUT/packs/m5/" ;;
-		esac
-	done
+	cp "$REPO/m5/progs.dat" "$REPO/m5/effectinfo.txt" "$REPO/m5/shaderwarm.txt" "$OUT/packs/m5/"
+	# THE RECIPES ARE AN ALLOW-LIST (REVIEW 0.9): a recipe ships because release/recipes.txt
+	# names it, never because it was not excluded. Until 2026-09-24 a deny-list shipped
+	# 152 of them -- a stale best.cfg, probes that quit, one that exec'd files it did not
+	# ship -- while the docs named sixteen the zip lacked. release/check-recipes.py holds
+	# the list, the docs and m5/ to agreement; the private build ships m5/ wholesale.
+	python3 release/check-recipes.py || { echo "   !! release/recipes.txt, m5/ and the docs disagree (above)"; exit 1; }
+	RECIPES=$(python3 release/check-recipes.py --list) || exit 1
+	for f in $RECIPES; do cp "$REPO/m5/$f" "$OUT/packs/m5/"; done
+	echo "   recipes: $(echo "$RECIPES" | wc -l | tr -d ' ') from release/recipes.txt"
 	# THIRD-PARTY CONTENT THAT MAY BE REDISTRIBUTED (2026-09-22, Seb: "put the
 	# texture packs and models in there too, just don't publish the copyrighted
 	# stuff like PAK0, PAK1, music, scourge, etc."). Two packs, each on its own
@@ -363,6 +388,14 @@ if [ -n "$LEAK" ]; then
 	exit 1
 fi
 echo "   clean: system frameworks + @executable_path only"
+# the shipped binary must be the one whose symbols were kept; the bundled dylibs join
+# them, and BUILD.txt says which build this UUID was
+[ "$(dwarfdump --uuid "$APP/Contents/MacOS/MetalQuake" | awk 'NR==1{print $2}')" = "$UUID" ] \
+	|| { echo "FAIL: the shipped binary is not $UUID, whose symbols were kept"; exit 1; }
+cp "$APP/Contents/MacOS"/*.dylib "$SYM/" 2>/dev/null || true
+printf '%s  %s%s  %s  %s\n' "$STAMP" "$(git rev-parse --short HEAD)" \
+	"$(git diff --quiet HEAD -- 2>/dev/null || echo -dirty)" \
+	"$([ "$PUBLIC" = 1 ] && echo public || echo private)" "$SIGNED" >> "$SYM/BUILD.txt"
 
 cat > "$OUT/README.txt" <<'TXT'
 MetalQuake
@@ -439,7 +472,8 @@ MetalQuake
 ==========
 Quake on Apple Silicon: a native Metal renderer with ray-traced lighting and
 shadows, volumetric fog that the level's own lights shine through, HDR output
-and MetalFX upscaling -- and a "Stock" setting that puts 1996 back in one click.
+and MetalFX upscaling -- and a "Stock" setting that puts the 1996 picture back in
+one click.
 A fork of the DarkPlaces engine. Free, GPL-2, source on GitHub.
 
 Not affiliated with id Software or Bethesda. Quake is their trademark, and
@@ -470,8 +504,18 @@ What Mac?
 Apple Silicon, running macOS 27 or later. An M3 or later has hardware ray tracing and is what the
 settings were tuned on (an M5). On an M1 or M2 the ray tracing is emulated:
 start on Options -> M5 Quality -> Fast, or Stock, and work upwards.
-It starts on "Best". If the picture is too dark or too bright on your display,
-Options -> Brightness and Gamma.
+It starts on "Best", with the brightness curve it was tuned under on an HDR
+(OLED or XDR) display. If the picture is too dark or too bright on yours: Options
+-> Brightness and Gamma. On an ordinary monitor, that page's own first row, "Reset
+to Defaults", gives a neutral curve to start from -- it resets only the brightness.
+(The Options page's "Reset to Defaults" is a different row: it resets everything,
+ray tracing and fog included.)
+
+The game's extras start as the engine ships them. Off until you switch them on
+(Options -> M5 Fun Mods): the Doom-style shotgun, bullet time, the movement
+presets, gore, burning, acid and the horde mode. On from the start: the ball
+lightning (key 9), the weapon feel and the muzzle flash. The Stock tier changes
+the picture only.
 
 What is included, and what is not
 ---------------------------------
@@ -498,6 +542,9 @@ Drop any of these into packs/ and they are picked up:
 Your settings are saved to
     ~/Library/Application Support/darkplaces/m5/config.cfg
 the first time you quit. Delete that file to return to the shipped defaults.
+If you ran an earlier MetalQuake, that file still holds what the earlier download
+shipped (its gameplay extras switched on, among other things): delete it once to
+start from these.
 
 Read this first
 ---------------
@@ -533,6 +580,16 @@ TXT
 	# (progs.dat legitimately carries the NAME m5_horde_best; the config must not carry a value)
 	PERSONAL=$(grep -rlE "/Users/|sebcarley" "$OUT/packs" || true)
 	PERSONAL="$PERSONAL$(grep -lE '^"(m5_horde_best|sensitivity|vid_width|_cl_name)"' "$OUT/packs/m5/config.cfg" || true)"
+	# The profile's own nets, at the artefact (REVIEW 0.9): no gameplay extra switched on,
+	# none of the rt_metal_sun_* overrides that replaced every map's own sun (the 0.1.x
+	# defect), and none of the eleven BEAUTY extras pinned (every tier keeps them ON; the
+	# engine default is the shipped value). Each grep keeps `|| true`: no match exits 1.
+	GAMEPLAY=$(grep -E '^"m5_(movement|gore|burn|venom|shotgun|bullettime|horde)' "$OUT/packs/m5/config.cfg" || true)
+	GAMEPLAY="$GAMEPLAY$(grep -E '^"rt_metal_sun_' "$OUT/packs/m5/config.cfg" || true)"
+	GAMEPLAY="$GAMEPLAY$(grep -E '^"(cl_particles_texsize|cl_particles_blood_droplet|cl_particles_soft|cl_particles_refract|cl_particles_scorchglow|rt_metal_gi_ao|rt_metal_fog_liquidlight|rt_metal_contact|m5_torch_embers|r_skylightning|r_caustics)"' "$OUT/packs/m5/config.cfg" || true)"
+	[ -z "$GAMEPLAY" ] || { echo "FAIL: the public config carries what the allow-list exists to keep out:"; echo "$GAMEPLAY"; exit 1; }
+	python3 release/check-recipes.py --dir "$OUT/packs/m5" --docs "$OUT/docs" \
+		|| { echo "FAIL: packs/m5's recipes are not exactly release/recipes.txt, or a shipped doc names one that is missing"; exit 1; }
 	if [ -n "$BAD$BIG$LINKS$PERSONAL" ]; then
 		echo "FAIL: the public packs folder contains something it must not:"
 		echo "$BAD"; echo "$BIG"; echo "$LINKS"; echo "$PERSONAL"

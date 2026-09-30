@@ -5,7 +5,7 @@
 A fork of the [DarkPlaces](https://github.com/DarkPlacesEngine/darkplaces) engine with a
 native Metal renderer, hardware ray-traced lighting and shadows, volumetric fog that the
 level's own lights shine through, HDR (EDR) output and MetalFX upscaling — and a **Stock**
-setting that puts the 1996 game back in one click.
+setting that puts the 1996 picture back in one click.
 
 <p>
   <img src="docs/media/thunderbolt.jpg" width="49%" alt="The thunderbolt lighting a room and its fog as it burns a Shambler">
@@ -14,7 +14,8 @@ setting that puts the 1996 game back in one click.
 
 **Watch:** [the thunderbolt (11 s)](https://github.com/sebcarley/MetalQuake/releases/download/v0.1.1/MetalQuake-thunderbolt.mp4) ·
 [the fog hall (22 s)](https://github.com/sebcarley/MetalQuake/releases/download/v0.1.1/MetalQuake-fog-hall.mp4)
-<sub>— captured a little brighter than it is played, so it survives video compression.</sub>
+<sub>— stills and clips alike are cinematic captures: the ray tracer run past any tier, no HUD,
+and brighter than the game is played, so they survive compression. In play it is darker.</sub>
 
 **[The field guide](https://sebcarley.github.io/MetalQuake/GUIDE.html)** ·
 **[The manual](https://sebcarley.github.io/MetalQuake/MANUAL.html)** ·
@@ -37,10 +38,13 @@ setting that puts the 1996 game back in one click.
   morphological antialiasing pass after the upscale.
 - **Seven quality tiers** on one menu row, from *Stock* (GLQuake as it was, through Metal)
   to *Ultimate*. Measured on an M5 at 1080p: Stock 320+ fps, Best ~100–110, Ultimate ~90.
-- **Game extras, each behind its own switch**: a reworked thunderbolt and a ninth weapon
-  (ball lightning), a Doom-style shotgun, bullet time, photo mode, a wave-survival horde
-  mode with a director, room reverb and occlusion in the mixer. All off returns the 1996
-  guns exactly.
+- **Game extras, each behind its own switch.** Off until you switch them on (*Options →
+  M5 Fun Mods*): a Doom-style shotgun, bullet time, movement presets, gore, burning and
+  acid, photo mode, and a wave-survival horde mode with a director. On from the start: a
+  reworked thunderbolt, a ninth weapon (ball lightning, key 9), the weapon feel (kick,
+  nail tracers, sparks), the muzzle flash, and room reverb and occlusion in the mixer. The
+  *Stock* tier changes the picture only; switching those extras off, and the muzzle flash
+  (`exec flash_off.cfg`, or the Stock tier), returns the 1996 guns.
 - Works with the two 1997 mission packs, the re-release's *Dimension of the Past* and
   *Dimension of the Machine*, and **Arcane Dimensions**, if you have them.
 
@@ -63,8 +67,13 @@ setting that puts the 1996 game back in one click.
 3. Double-click `MetalQuake.app`. The first time, macOS says it was downloaded from the
    internet and asks whether to open it — click **Open**. The app is signed with a
    Developer ID and notarised by Apple, so there is no Terminal step.
-   It starts on the **Best** tier. Too dark or bright on your
-   display? *Options → Brightness and Gamma*. Too slow? *Options → M5 Quality*.
+   It starts on the **Best** tier, with a brightness curve tuned on an HDR display. Too
+   dark or bright on yours? *Options → Brightness and Gamma*; on an ordinary monitor that
+   page's own first row, *Reset to Defaults*, gives a neutral curve (it resets only the
+   brightness — the *Options* page's *Reset to Defaults* resets everything, ray tracing and
+   fog included). Too slow? *Options → M5 Quality*. Coming from an earlier download? Your
+   saved settings still carry what it shipped: delete
+   `~/Library/Application Support/darkplaces/m5/config.cfg` once to start from the new ones.
 
 ### What is included
 

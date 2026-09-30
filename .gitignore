@@ -74,6 +74,11 @@ xcuserdata/
 !/m5/showreel_ab.cfg
 !/m5/showreel_check.cfg
 !/m5/effectinfo.txt
+# The recipe .cfg files the public download ships are TRACKED in spite of /m5/*: each is
+# force-added (git add -f m5/<name>.cfg), release/recipes.txt is the one list of them, and
+# release/check-recipes.py (run by test/docsync.py) fails when a listed name is not
+# tracked. Negating a hundred names here would be a second copy of that list, and two
+# copies drift.
 /tools/
 /qc/*.lno
 
@@ -99,3 +104,7 @@ __pycache__/
 # FTEQW source, kept beside the tree for reference only (2026-09-12 survey): never ours to commit
 /release/public/
 /release/media/
+# Per-build symbols from release/make-release.sh: the unstripped engine and its dylibs,
+# keyed by the binary's UUID, so a crash report from any shipped build can be read.
+/release/symbols/
+/relit/

@@ -34,7 +34,9 @@
 # and history he had archived from the morning's recipes -- two arms came out
 # byte-identical to the baseline because the baseline already carried them.
 # State every cvar an arm depends on IN the arm, never by omission; FOGBED_FULLSCREEN=1 takes the display at 1920x1080;
-# FOGBED_CAMTRACK=1 adds one camera line per playback frame to the log;
+# FOGBED_CAMTRACK=1 adds one camera line per playback frame to the log (its fN and the
+# dumps' are the timedemo's own frame count since 2026-09-24; frame numbers recorded before
+# then -- demo22 3400-3407, demo23 2340-2347 -- read 6 high, so the same content sits 6 lower);
 # FOGBED_BIN=<path> runs another binary (a control), still from the repo root.
 set -eu
 cd "$(dirname "$0")/.."
@@ -57,6 +59,7 @@ if [ "$CONFIG" != "none" ] && [ -f "$CONFIG" ]; then cp "$CONFIG" "$SB/m5/config
 	echo 'vid_vsync 0'
 	echo 'cl_maxfps 0'
 	echo 'cl_maxidlefps 0'
+	echo 'r_dither 0'	# REVIEW 0.5: its grain is exactly what the fog metrics measure
 	if [ "${FOGBED_FULLSCREEN:-0}" = "1" ]; then
 		echo 'vid_width 1920'; echo 'vid_height 1080'; echo 'vid_fullscreen 1'; echo 'vid_desktopfullscreen 1'
 	else

@@ -28,8 +28,9 @@ The tree's bench history is a catalogue of numbers poisoned by exactly these.
    `out-tiers2` used — and records the run's `Video Mode:` in a `vidmode`
    column; a fullscreen run that landed anywhere else (the intermittent
    1920x1017 class) is flagged `!` on the arm, warned about, and dropped by
-   `perf-report.py` with a printed count. Start a fresh `PERF_OUT` — an old
-   `results.tsv` has the 14-column header.
+   `perf-report.py` with a printed count. Start a fresh `PERF_OUT` — a
+   `results.tsv` from before this column has the 14-column header, one from
+   before the frame-time columns (2026-09-24) the 15-column one; today's has 22.
 
 ## The three tools
 
@@ -48,7 +49,11 @@ demo11 (real play, e3m1) via `PERF_BEDS="demo11 demo14"`.
 
 ## Reading results
 
-- `out/results.tsv` — every run, machine-readable, append-only.
+- `out/results.tsv` — every run, machine-readable, append-only. 22 columns
+  since 2026-09-24: the seven `ft_*` after `vidmode` are the benchmark line's
+  frame-time distribution (see the last section). An older 15-column file is
+  read harmlessly — every reader keys on names or truncates — but start a fresh
+  `PERF_OUT` rather than mixing.
 - `out/report.html` — the findings report (the deliverable for Seb).
 - `out/findings.json` — consumed by the retier step.
 
@@ -112,3 +117,39 @@ with DVFS whenever the window is presentation-throttled and with the sidecar's
 buffers interleaving on the GPU (2.3–5.0 ms for one unchanged arm), so use the
 REGION mode for a pass, and toggle the cvar under test IN ONE BOOT (defer …
 every 2 s) so the arms share a clock state — separate boots do not.
+
+## Frame-time distribution and first-use stalls
+
+Since 2026-09-24 (REVIEW 0.8) every timedemo's benchmark line ends
+`| ft p50 X p95 X p99 X p99.9 X max X ms, >2x median N, >33ms N`, and the sweep
+carries the seven figures as `ft_p50 ft_p95 ft_p99 ft_p999 ft_max ft_over2x
+ft_over33`. They exist because the one-second minimum cannot see a stall: a
+timedemo pins `cl.time` to each packet, so its "second" is a second of DEMO
+time — some seventy frames — and one 50 ms frame is a ~6% dip there. Here it is
+the `max`, and a count.
+
+Percentiles are nearest-rank from a 10 µs histogram (1 ms bins from 100 ms to
+1 s), so each is an upper bound tight to 0.01 ms below 100 ms; `max` and
+`>33ms` are exact; `>2x median` is counted from whole bins and never
+overcounts. The deltas are the same ones that sum to the reported time, so
+`developer 1`'s echo of their mean must equal 1000/fps — the self-check.
+
+**Every sweep run is a fresh process, and that decides what `max` measures.**
+The map-start bakes and the world acceleration structure land on the load
+frames, before the counted window; a shader permutation the Metal compiler has
+never seen, first used LATER in the demo, lands inside it. Measured: demo1 on a
+cold compiler cache read max 416 ms at host frame 34 (the window counted from
+host frame 6) — a 401 ms compile of the postprocess shader with view tint, on
+the first damage flash — and 19 ms on the next launch, the compiler's own cache
+having kept it. So p99 (the ~30th-worst frame on a 3000-frame demo) survives
+between launches and `max`/p99.9 mostly do not: **never A/B arms on `max`.**
+
+`METAL_HITCH=<ms>` (env; unset or 0 is off, `0.001` is a census) names the
+stalls: every synchronous first-use cost — MSL compiles, reflection and render
+pipelines, the ray-tracing kernels and acceleration structures, MetalFX
+scalers, the murk's bakes, the froxel volumes — prints
+`HITCH <what> <ms> ms frame <n> <detail>` on stderr when it took at least that
+long. With `developer 1` the timedemo echo also prints the host frame of its
+worst frame and where the counted window started, so a HITCH line can be placed
+inside or outside the window by its frame number alone. Redirect census runs
+to a file: stderr is non-blocking here, so a full pipe can drop lines.

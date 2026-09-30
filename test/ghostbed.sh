@@ -9,7 +9,10 @@
 #     <cfg lines> newline-separated console lines for this arm, e.g.
 #                 "r_metalfx 2
 #                  r_metalfx_reactive 3"
-#     [frames]    RT_METAL_DUMPFRAMES list, default 417,418,419,420,421
+#     [frames]    RT_METAL_DUMPFRAMES list, default 417,418,419,420,421 -- chosen under the
+#                 pre-2026-09-24 dump numbering, which read 6 high (the loading screen and
+#                 the three pre-start frames were counted); the same rocket smoke is at
+#                 411-415 in the timedemo's own frame count the dumps now carry.
 #
 #   env  GHOST_DEMO=ghostbed.dem   the demo in Seb's m5/ userdir (static camera,
 #                                  rocket fired twice on e1m3; test/README.md)
@@ -87,6 +90,7 @@ cp "$USERDIR_REAL/m5/$DEMO" "$SB/m5/"
 	echo 'cl_maxfps 0'
 	echo 'cl_nettimesyncfactor 1'
 	echo 'cl_nettimesyncboundmode 1'
+	echo 'r_dither 0'	# REVIEW 0.5: its grain would read as ghost/crawl signal
 	echo "r_viewscale $VS"
 	printf '%s\n' "$LINES"
 } > "$SB/m5/autoexec.cfg"

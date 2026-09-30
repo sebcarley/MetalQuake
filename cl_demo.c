@@ -30,6 +30,132 @@ static void CL_FinishTimeDemo (void);
 /*
 ==============================================================================
 
+TIMEDEMO FRAME-TIME DISTRIBUTION (2026-09-24, REVIEW 0.8)
+
+The one-second min/avg/max averages over a DEMO second -- a timedemo pins
+cl.time to each packet's own time (CL_NetworkTimeReceived) and renders one
+frame per packet -- so a 'second' is some seventy frames and one 50 ms stall
+reads as a ~6% dip that the average then swallows. Each counted frame's
+host.realtime delta is binned here: 10 us bins to 100 ms, 1 ms bins to 1 s,
+one overflow bin. The deltas start at the run's start frame, so they sum to
+exactly the `time` CL_FinishTimeDemo reports and their mean is 1000/fps --
+the developer echo prints that mean as the self-check.
+
+The percentiles are appended AFTER the '| mode' field, so every parser
+anchored on 'result', 'frames', 'seconds', 'fps' or 'min/avg/max:' still
+matches. Static storage cleared per run; per frame it is a subtraction, two
+compares and an increment.
+
+The delta sampled in host frame F is host frame F-1's whole duration: Sys_Frame
+reads the clock at its start and Host_Frame increments host.framecount before
+CL_Frame runs. A METAL_HITCH line printed during that stall carries F-1, which
+is why the worst frame is recorded as host.framecount - 1 -- so a HITCH line
+can be placed inside or outside the counted window by its frame number alone.
+==============================================================================
+*/
+#define TD_FT_FINE   10000				// 10 us bins over [0, 100) ms
+#define TD_FT_COARSE 900				// 1 ms bins over [100, 1000) ms
+#define TD_FT_BINS   (TD_FT_FINE + TD_FT_COARSE + 1)	// + one overflow bin, 1 s and over
+static unsigned int td_ft_hist[TD_FT_BINS];
+static unsigned int td_ft_count;	// frames binned
+static unsigned int td_ft_over33;	// frames over 33 ms, counted exactly
+static double td_ft_summs;		// their sum, ms (the developer echo's mean: must equal 1000/fps)
+static double td_ft_maxms;		// the worst frame, exact
+static double td_ft_prev;		// host.realtime at the previous counted frame
+static unsigned int td_ft_startframe;	// host frame the counted window starts at
+static unsigned int td_ft_maxframe;	// host frame whose duration was the worst
+
+static void CL_TimeDemo_FrameTimeReset(void)
+{
+	memset(td_ft_hist, 0, sizeof(td_ft_hist));
+	td_ft_count = 0;
+	td_ft_over33 = 0;
+	td_ft_summs = 0;
+	td_ft_maxms = 0;
+	td_ft_prev = host.realtime;
+	td_ft_startframe = host.framecount;
+	td_ft_maxframe = host.framecount;
+}
+
+static void CL_TimeDemo_FrameTimeSample(void)
+{
+	double ms = (host.realtime - td_ft_prev) * 1000.0;
+	int b;
+
+	td_ft_prev = host.realtime;
+	// A skipped client-to-server packet (server-side demos only) sends the
+	// read loop round again inside ONE host frame and counts td_frames twice
+	// at the same host.realtime: the second pass is not a frame.
+	if (ms <= 0)
+		return;
+	if (ms < 100.0)
+		b = (int)(ms * 100.0);
+	else if (ms < 1000.0)
+		b = TD_FT_FINE + (int)(ms - 100.0);
+	else
+		b = TD_FT_BINS - 1;
+	td_ft_hist[b]++;
+	td_ft_count++;
+	td_ft_summs += ms;
+	if (ms > 33.0)
+		td_ft_over33++;
+	if (ms > td_ft_maxms)
+	{
+		td_ft_maxms = ms;
+		td_ft_maxframe = host.framecount - 1;
+	}
+}
+
+// bin b covers [floor(b), floor(b + 1)) in ms; the overflow bin's floor is 1 s
+static double CL_TimeDemo_FrameTimeBinFloor(int b)
+{
+	if (b < TD_FT_FINE)
+		return b * 0.01;
+	if (b < TD_FT_FINE + TD_FT_COARSE)
+		return 100.0 + (b - TD_FT_FINE);
+	return 1000.0;
+}
+
+// Nearest rank: the TOP of the bin holding the ceil(permille * count / 1000)-th
+// fastest frame, clamped to the exact worst frame -- so no figure exceeds max,
+// and below 100 ms each is an upper bound tight to one 10 us bin.
+static double CL_TimeDemo_FrameTimePercentile(unsigned int permille)
+{
+	unsigned long long rank, cum = 0;
+	double top;
+	int b;
+
+	if (!td_ft_count)
+		return 0;
+	rank = ((unsigned long long)td_ft_count * permille + 999) / 1000;
+	if (rank < 1)
+		rank = 1;
+	for (b = 0; b < TD_FT_BINS - 1; b++)
+	{
+		cum += td_ft_hist[b];
+		if (cum >= rank)
+			break;
+	}
+	top = b < TD_FT_BINS - 1 ? CL_TimeDemo_FrameTimeBinFloor(b + 1) : td_ft_maxms;
+	return top < td_ft_maxms ? top : td_ft_maxms;
+}
+
+// frames of at least `ms`, from whole bins whose floor reaches it: never an
+// overcount, short by at most the one bin that straddles the line
+static unsigned int CL_TimeDemo_FrameTimeAtLeast(double ms)
+{
+	unsigned int n = 0;
+	int b;
+
+	for (b = 0; b < TD_FT_BINS; b++)
+		if (CL_TimeDemo_FrameTimeBinFloor(b) >= ms)
+			n += td_ft_hist[b];
+	return n;
+}
+
+/*
+==============================================================================
+
 DEMO CODE
 
 When a demo is playing back, all outgoing network messages are skipped, and
@@ -219,7 +345,10 @@ void CL_ReadDemoMessage(void)
 					cls.td_onesecondmaxfps = 0;
 					cls.td_onesecondavgfps = 0;
 					cls.td_onesecondavgcount = 0;
+					CL_TimeDemo_FrameTimeReset();
 				}
+				else if (cls.td_frames > 0)
+					CL_TimeDemo_FrameTimeSample();
 				if (cl.time >= cls.td_onesecondnexttime)
 				{
 					double fps = cls.td_onesecondframes / (host.realtime - cls.td_onesecondrealtime);
@@ -507,6 +636,8 @@ static void CL_FinishTimeDemo (void)
 	int i;
 	double time, totalfpsavg;
 	double fpsmin, fpsavg, fpsmax; // report min/avg/max fps
+	double ft50, ft95, ft99, ft999;	// the frame-time distribution, ms
+	unsigned int ftover2x;
 	static int benchmark_runs = 0;
 	char vabuf[1024];
 
@@ -518,8 +649,16 @@ static void CL_FinishTimeDemo (void)
 	fpsmin = cls.td_onesecondminfps;
 	fpsavg = cls.td_onesecondavgcount ? cls.td_onesecondavgfps / cls.td_onesecondavgcount : 0;
 	fpsmax = cls.td_onesecondmaxfps;
+	ft50 = CL_TimeDemo_FrameTimePercentile(500);
+	ft95 = CL_TimeDemo_FrameTimePercentile(950);
+	ft99 = CL_TimeDemo_FrameTimePercentile(990);
+	ft999 = CL_TimeDemo_FrameTimePercentile(999);
+	ftover2x = CL_TimeDemo_FrameTimeAtLeast(2.0 * ft50);
 	// LadyHavoc: timedemo now prints out 7 digits of fraction, and min/avg/max
 	Con_Printf("%i frames %5.7f seconds %5.7f fps, one-second fps min/avg/max: %.0f %.0f %.0f (%i seconds)\n", frames, time, totalfpsavg, fpsmin, fpsavg, fpsmax, cls.td_onesecondavgcount);
+	// developer-only, so the showreel's performance finale (developer 0) reads
+	// exactly as it did; the mean is the self-check (it must equal 1000/fps)
+	Con_DPrintf("frame time over %u frames: mean %.3f, p50 %.2f p95 %.2f p99 %.2f p99.9 %.2f max %.2f ms at host frame %u (counted from host frame %u); %u over twice the median, %u over 33 ms\n", td_ft_count, td_ft_count ? td_ft_summs / td_ft_count : 0.0, ft50, ft95, ft99, ft999, td_ft_maxms, td_ft_maxframe, td_ft_startframe, ftover2x, td_ft_over33);
 	Sys_TimeString(vabuf, sizeof(vabuf), "%Y-%m-%d %H:%M:%S");
 	// The trailing "| mode" field (2026-08-19) is the geometry WITNESS: it is read
 	// at the END of the run, from vid.mode, so a window that was clamped or a
@@ -528,7 +667,10 @@ static void CL_FinishTimeDemo (void)
 	// 2026-08-18 and shows nowhere in the fps line) is recorded beside the
 	// number it would have corrupted. Appended last so every parser that
 	// anchors on "result", "seconds" and "min/avg/max:" still matches.
-	Log_Printf("benchmark.log", "date %s | enginedate %s | demo %s | commandline %s | run %d | result %i frames %5.7f seconds %5.7f fps, one-second fps min/avg/max: %.0f %.0f %.0f (%i seconds) | mode %s%s %dx%d\n", vabuf, engineversion, cls.demoname, cmdline.string, benchmark_runs + 1, frames, time, totalfpsavg, fpsmin, fpsavg, fpsmax, cls.td_onesecondavgcount, vid.mode.desktopfullscreen ? "desktop " : "", vid.mode.fullscreen ? "fullscreen" : "window", vid.mode.width, vid.mode.height);
+	// The "| ft" field after it (2026-09-24) is the frame-time distribution
+	// (TIMEDEMO FRAME-TIME DISTRIBUTION, top of file), appended last for the
+	// same reason.
+	Log_Printf("benchmark.log", "date %s | enginedate %s | demo %s | commandline %s | run %d | result %i frames %5.7f seconds %5.7f fps, one-second fps min/avg/max: %.0f %.0f %.0f (%i seconds) | mode %s%s %dx%d | ft p50 %.2f p95 %.2f p99 %.2f p99.9 %.2f max %.2f ms, >2x median %u, >33ms %u\n", vabuf, engineversion, cls.demoname, cmdline.string, benchmark_runs + 1, frames, time, totalfpsavg, fpsmin, fpsavg, fpsmax, cls.td_onesecondavgcount, vid.mode.desktopfullscreen ? "desktop " : "", vid.mode.fullscreen ? "fullscreen" : "window", vid.mode.width, vid.mode.height, ft50, ft95, ft99, ft999, td_ft_maxms, ftover2x, td_ft_over33);
 	if (Sys_CheckParm("-benchmark"))
 	{
 		++benchmark_runs;
@@ -648,6 +790,9 @@ void CL_TimeDemo_f(cmd_state_t *cmd)
 
 	cls.timedemo = host.restless = true;
 	cls.td_frames = -2;		// skip the first frame
+	// a run stopped before its first counted frame must not report the last
+	// run's frames; -benchmarkruns restarts come back through here too
+	CL_TimeDemo_FrameTimeReset();
 	cls.demonum = -1;		// stop demo loop
 
 	// Might need to disable vsync

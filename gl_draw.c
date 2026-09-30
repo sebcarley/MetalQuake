@@ -65,6 +65,20 @@ cvar_t r_font_antialias = {CF_CLIENT | CF_ARCHIVE, "r_font_antialias", "1", "0 =
 cvar_t r_font_always_reload = {CF_CLIENT | CF_ARCHIVE, "r_font_always_reload", "0", "reload a font even given the same loadfont command. useful for trying out different versions of the same font file"};
 cvar_t r_nearest_2d = {CF_CLIENT | CF_ARCHIVE, "r_nearest_2d", "0", "use nearest filtering on all 2d textures (including conchars)"};
 cvar_t r_nearest_conchars = {CF_CLIENT | CF_ARCHIVE, "r_nearest_conchars", "0", "use nearest filtering on conchars texture"};
+// HUD BRIGHTNESS (REVIEW 0.4, 2026-09-24). Everything DrawQ draws is laid over
+// the finished frame and never passes through the gamma curve, so on a dark
+// curve the status bar and the notify text are the brightest things on screen.
+// This dims the IN-GAME 2D layer only: SCR_DrawScreen hands the menu, video,
+// loading screen and console a scale of 1, so the page it is set from never
+// dims with it. (v_glslgamma_2d is NOT the lever: only R_SetupShader_Generic
+// reads it, which in practice means only the loading screen -- the UI surface
+// path never asks for GAMMARAMPS.)
+cvar_t r_hud_brightness = {CF_CLIENT | CF_ARCHIVE, "r_hud_brightness", "1", "dims the in-game 2D layer (status bar, crosshair, messages, centre print, a mod's HUD, the fps meter) by this factor, 0.1-1, while the menus, console and loading screen stay at full white. 1 draws everything exactly as before"};
+// the colour scale DrawQ_FlushUI hands the 2D batch through r_refdef.view.colorscale
+// (R_GetCurrentTexture's VERTEXCOLOR block multiplies it into Color_Diffuse, which
+// both shader arms already apply); 1 except while SCR_DrawScreen draws the dimmed
+// in-game layer
+static float drawq_uicolorscale = 1.0f;
 
 //=============================================================================
 /* Support Routines */
@@ -761,6 +775,7 @@ void GL_Draw_Init (void)
 	Cvar_RegisterVariable(&r_textcontrast);
 	Cvar_RegisterVariable(&r_nearest_2d);
 	Cvar_RegisterVariable(&r_nearest_conchars);
+	Cvar_RegisterVariable(&r_hud_brightness);
 
 	// allocate fonts storage
 	fonts_mempool = Mem_AllocPool("FONTS", 0, NULL);
@@ -790,6 +805,39 @@ void DrawQ_Start(void)
 {
 	r_refdef.draw2dstage = 1;
 	R_ResetViewRendering2D_Common(0, NULL, NULL, 0, 0, vid.mode.width, vid.mode.height, vid_conwidth.integer, vid_conheight.integer);
+}
+
+/*
+==================
+DrawQ_HUDBrightness
+
+r_hud_brightness bounded to 0.1-1. EXACTLY 1.0f at the default -- bound() returns
+its upper limit unchanged -- which is the whole of the off switch: every
+DrawQ_SetUIColorScale call then compares equal and returns without flushing. One
+developer line when the value changes, never per frame.
+==================
+*/
+float DrawQ_HUDBrightness(void)
+{
+	static float last = 1.0f;
+	float s = bound(0.1f, r_hud_brightness.value, 1.0f);
+	if (s != last)
+	{
+		Con_DPrintf("HUD brightness %.2f: the in-game 2D layer draws at this scale; the menus and console stay at full white\n", s);
+		last = s;
+	}
+	return s;
+}
+
+// what is already queued was drawn under the old scale, so it is flushed with that
+// scale before the change; an unchanged scale does nothing at all -- no flush, no
+// batch split -- which is what keeps the default's call stream the old one
+void DrawQ_SetUIColorScale(float scale)
+{
+	if (scale == drawq_uicolorscale)
+		return;
+	DrawQ_FlushUI();
+	drawq_uicolorscale = scale;
 }
 
 qbool r_draw2d_force = false;
@@ -1480,12 +1528,19 @@ void DrawQ_FlushUI(void)
 	}
 
 	// this is roughly equivalent to R_Mod_Draw, so the UI can use full material feature set
-	r_refdef.view.colorscale = 1;
+	// HUD BRIGHTNESS: the current 2D layer's scale (1 except the dimmed in-game
+	// layer); 1.0f at the default, the value this line's literal always assigned
+	r_refdef.view.colorscale = drawq_uicolorscale;
 	r_textureframe++; // used only by R_GetCurrentTexture
 	GL_DepthMask(false);
 
 	Mod_Mesh_Finalize(mod);
 	R_DrawModelSurfaces(&cl_meshentities[MESH_UI].render, false, false, false, false, false, true);
+	// ...and back to the literal 1 this function always left behind: R_RenderView's
+	// isoverlay branch (a CSQC VF_CLEARSCREEN 0 scene) renders WITHOUT recomputing
+	// colorscale, straight after its own entry flush, so a HUD scale left here
+	// would light that scene at the HUD's factor
+	r_refdef.view.colorscale = 1;
 
 	Mod_Mesh_Reset(mod);
 }

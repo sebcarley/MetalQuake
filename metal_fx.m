@@ -59,6 +59,7 @@ static id<MTLFXTemporalScaler> mfx_tscaler;
 static int   mfx_tkey_inw, mfx_tkey_inh, mfx_tkey_outw, mfx_tkey_outh;
 static int   mfx_tkey_textype;
 static qbool mfx_tkey_hdr;
+static qbool mfx_tkey_outfloat;	// REVIEW 0.5: the destination's own format, not inferred from hdr
 static qbool mfx_tkey_failed;
 static qbool mfx_tencode_warned;
 
@@ -66,6 +67,7 @@ static id<MTLFXSpatialScaler> mfx_scaler;
 static int   mfx_key_inw, mfx_key_inh, mfx_key_outw, mfx_key_outh;
 static int   mfx_key_textype;
 static qbool mfx_key_hdr;
+static qbool mfx_key_outfloat;	// REVIEW 0.5: the destination's own format, not inferred from hdr
 static qbool mfx_key_failed;
 static qbool mfx_encode_warned;
 
@@ -75,6 +77,7 @@ static void mfx_release_scaler(void)
 	mfx_key_inw = mfx_key_inh = mfx_key_outw = mfx_key_outh = 0;
 	mfx_key_textype = 0;
 	mfx_key_hdr = false;
+	mfx_key_outfloat = false;
 	mfx_key_failed = false;
 	mfx_encode_warned = false;
 }
@@ -85,6 +88,7 @@ static void mfx_release_temporal(void)
 	mfx_tkey_inw = mfx_tkey_inh = mfx_tkey_outw = mfx_tkey_outh = 0;
 	mfx_tkey_textype = 0;
 	mfx_tkey_hdr = false;
+	mfx_tkey_outfloat = false;
 	mfx_tkey_failed = false;
 	mfx_tencode_warned = false;
 }
@@ -231,17 +235,18 @@ void MetalFX_Shutdown(void)
 	mfx_tmaxscale     = 0.0f;
 }
 
-qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr)
+qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr, qbool outfloat)
 {
 	id<MTLDevice> dev;
 	MTLFXSpatialScalerDescriptor *sd;
 	MTLPixelFormat informat, outformat;
+	double hitch;
 
 	if (!mfx_available)
 		return false;
 	if (inwidth  == mfx_key_inw  && inheight  == mfx_key_inh &&
 	    outwidth == mfx_key_outw && outheight == mfx_key_outh &&
-	    intextype == mfx_key_textype && hdr == mfx_key_hdr)
+	    intextype == mfx_key_textype && hdr == mfx_key_hdr && outfloat == mfx_key_outfloat)
 		return mfx_scaler != nil && !mfx_key_failed;
 
 	// a new key: release the old scaler and record the key BEFORE the factory
@@ -251,6 +256,7 @@ qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight
 	mfx_key_outw = outwidth; mfx_key_outh = outheight;
 	mfx_key_textype = intextype;
 	mfx_key_hdr = hdr;
+	mfx_key_outfloat = outfloat;
 	mfx_key_failed = true;
 
 	// the input format follows the pooled intermediate's textype, which is
@@ -266,14 +272,18 @@ qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight
 		Con_Printf(CON_WARN "MetalFX: unsupported input textype %d; falling back to the bilinear path\n", intextype);
 		return false;
 	}
-	// the output format is mb_screentex's, by the same expression that sizes
-	// it (vid.edr_active); the mode is the header's own pairing -- perceptual
-	// for sRGB-encoded 8-bit output, reversible-tone-mapped HDR for the
-	// extended-range float drawable. On the one frame of an EDR toggle edge
-	// the two sides can disagree (rt_screen re-types a frame before the
-	// drawable does); that frame gets a mixed-format scaler, which is valid,
-	// and the next frame's key re-mints.
-	outformat = hdr ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
+	// the output format is the DESTINATION's own (REVIEW 0.5): the caller reads
+	// it off the screen texture BeginFrame made this frame
+	// (Metal_Backend_ScreenIsFloat) -- RGBA16Float under EDR, and also while
+	// r_dither holds the frame float to the present -- so the scaler can never
+	// be keyed for a destination it will not be handed. At r_dither 0 outfloat
+	// equals hdr on every rendering frame, which is the old expression. The
+	// mode is the header's own pairing -- perceptual for sRGB-encoded output,
+	// reversible-tone-mapped HDR for the extended-range float drawable. On the
+	// one frame of an EDR toggle edge the two sides can disagree (rt_screen
+	// re-types a frame before the drawable does); that frame gets a
+	// mixed-format scaler, which is valid, and the next frame's key re-mints.
+	outformat = outfloat ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
 
 	dev = (__bridge id<MTLDevice>)VID_Metal_GetDevice();
 	if (!dev)
@@ -291,14 +301,19 @@ qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight
 	// and reversible tone mapping is the wrong regime for it (8-5 review D4).
 	// Perceptual into a float output is valid; the formats are checked
 	// separately.
-	sd.colorProcessingMode = (hdr && informat != MTLPixelFormatBGRA8Unorm)
+	// REVIEW 0.5: HDR only INTO a float output as well -- r_dither's float
+	// screen at SDR is perceptual data; at r_dither 0 outfloat == hdr, so this
+	// is the old expression exactly.
+	sd.colorProcessingMode = (hdr && outfloat && informat != MTLPixelFormatBGRA8Unorm)
 	                             ? MTLFXSpatialScalerColorProcessingModeHDR
 	                             : MTLFXSpatialScalerColorProcessingModePerceptual;
+	hitch = Sys_HitchStart();	// METAL_HITCH: once per size or format key; refusals timed too
 	mfx_scaler = [sd newSpatialScalerWithDevice:dev];
+	Sys_HitchReport(hitch, "metalfx", "spatial %dx%d->%dx%d%s", inwidth, inheight, outwidth, outheight, hdr ? " hdr" : "");
 	if (!mfx_scaler)
 	{
 		Con_Printf(CON_WARN "MetalFX: scaler factory refused %dx%d -> %dx%d (textype %d%s); falling back to the bilinear path\n",
-			inwidth, inheight, outwidth, outheight, intextype, hdr ? ", hdr" : "");
+			inwidth, inheight, outwidth, outheight, intextype, hdr ? ", hdr" : (outfloat ? ", float out" : ""));
 		return false;
 	}
 	// the input is a pooled render target, whose usage is
@@ -331,7 +346,7 @@ qbool MetalFX_ScalerReady(int inwidth, int inheight, int outwidth, int outheight
 	Con_Printf("MetalFX: spatial scaler %dx%d -> %dx%d (%s, %s)\n",
 		inwidth, inheight, outwidth, outheight,
 		informat == MTLPixelFormatBGRA8Unorm ? "BGRA8" : (informat == MTLPixelFormatRGBA16Float ? "RGBA16F" : "RGBA32F"),
-		hdr ? "hdr" : "perceptual");
+		hdr ? "hdr" : (outfloat ? "perceptual, float out" : "perceptual"));
 	return true;
 }
 
@@ -414,17 +429,18 @@ void MetalFX_TemporalScaleRange(float *outmin, float *outmax)
 	if (outmax) *outmax = mfx_tmaxscale;
 }
 
-qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr)
+qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheight, int intextype, qbool hdr, qbool outfloat)
 {
 	id<MTLDevice> dev;
 	MTLFXTemporalScalerDescriptor *td;
 	MTLPixelFormat informat, outformat;
+	double hitch;
 
 	if (!mfx_tavailable)
 		return false;
 	if (inwidth  == mfx_tkey_inw  && inheight  == mfx_tkey_inh &&
 	    outwidth == mfx_tkey_outw && outheight == mfx_tkey_outh &&
-	    intextype == mfx_tkey_textype && hdr == mfx_tkey_hdr)
+	    intextype == mfx_tkey_textype && hdr == mfx_tkey_hdr && outfloat == mfx_tkey_outfloat)
 		return mfx_tscaler != nil && !mfx_tkey_failed;
 
 	// key recorded, and the failure memoised, BEFORE the factory runs -- the
@@ -435,6 +451,7 @@ qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheig
 	mfx_tkey_outw = outwidth; mfx_tkey_outh = outheight;
 	mfx_tkey_textype = intextype;
 	mfx_tkey_hdr = hdr;
+	mfx_tkey_outfloat = outfloat;
 	mfx_tkey_failed = true;
 
 	switch (intextype)
@@ -446,7 +463,8 @@ qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheig
 		Con_Printf(CON_WARN "MetalFX: unsupported temporal input textype %d; falling back\n", intextype);
 		return false;
 	}
-	outformat = hdr ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
+	// the destination's own format, as in MetalFX_ScalerReady (REVIEW 0.5)
+	outformat = outfloat ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
 
 	dev = (__bridge id<MTLDevice>)VID_Metal_GetDevice();
 	if (!dev)
@@ -490,11 +508,13 @@ qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheig
 	// MetalFX reads the reactive value from the first channel of whatever
 	// format it is told.
 	td.reactiveMaskTextureFormat = MTLPixelFormatBGRA8Unorm;
+	hitch = Sys_HitchStart();	// METAL_HITCH: synchronous initialisation, once per key
 	mfx_tscaler = [td newTemporalScalerWithDevice:dev];
+	Sys_HitchReport(hitch, "metalfx", "temporal %dx%d->%dx%d%s", inwidth, inheight, outwidth, outheight, hdr ? " hdr" : "");
 	if (!mfx_tscaler)
 	{
 		Con_Printf(CON_WARN "MetalFX: temporal factory refused %dx%d -> %dx%d (textype %d%s); falling back\n",
-			inwidth, inheight, outwidth, outheight, intextype, hdr ? ", hdr" : "");
+			inwidth, inheight, outwidth, outheight, intextype, hdr ? ", hdr" : (outfloat ? ", float out" : ""));
 		return false;
 	}
 	if (((unsigned int)mfx_tscaler.outputTextureUsage &
@@ -518,7 +538,7 @@ qbool MetalFX_TemporalReady(int inwidth, int inheight, int outwidth, int outheig
 	Con_Printf("MetalFX: temporal scaler %dx%d -> %dx%d (%s, %s)\n",
 		inwidth, inheight, outwidth, outheight,
 		informat == MTLPixelFormatBGRA8Unorm ? "BGRA8" : (informat == MTLPixelFormatRGBA16Float ? "RGBA16F" : "RGBA32F"),
-		hdr ? "hdr" : "sdr");
+		hdr ? "hdr" : (outfloat ? "sdr, float out" : "sdr"));
 	return true;
 }
 

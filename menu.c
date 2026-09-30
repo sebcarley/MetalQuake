@@ -1917,6 +1917,8 @@ extern cvar_t rt_metal_gi;            // GIARC G3 lever (2026-08-29); second ext
 extern cvar_t rt_metal_gi_rate;       // GIARC G4-1 lever (2026-08-29)
 extern cvar_t rt_metal_samples;
 extern cvar_t rt_metal_shadowlights;
+extern cvar_t rt_metal_shadowlights_smooth;   // 2026-09-30: pinned by every tier (Seb: "set the tiers")
+extern cvar_t rt_metal_fixturelights;
 extern cvar_t rt_metal_scale;
 extern cvar_t rt_metal_fog;
 extern cvar_t rt_metal_shafts;
@@ -2153,7 +2155,7 @@ static const struct { cvar_t *cv; float v[M5_QUALITY_TIERS]; } m5_quality_levers
 	{ &r_volumetric_skyfog,     {     0.8f,  0.8f,    0.8f,   0.8f,   0.8f,   0.8f,    0.8f }},   // sky's own share of a sky pixel
 #if defined(MACOSX) && !defined(__IPHONEOS__)
 	{ &rt_metal,                {        0,     1,       1,      1,      1,      1,       1 }},   // ray-tracing master; 0 also restores the baked lightmaps
-	{ &rt_metal_lightsample,    {        0,     0,       1,      1,      1,      1,       1 }},   // the fog's per-light shadow structure -- the "clumpiness" (Seb, 2026-09-06). 2026-09-19: Superfast loses it, and it is the only tier that does
+	{ &rt_metal_lightsample,    {        0,     0,       0,      0,      0,      0,       0 }},   // 2026-09-28: OFF on every tier (Seb: the pick's variance is the fizz; fizz_pick_off.cfg measured). Was the fog's per-light shadow structure -- the "clumpiness" (Seb, 2026-09-06). 2026-09-19: Superfast loses it, and it is the only tier that does
 	{ &rt_metal_fog_beams,      {     0.5f,  0.5f,    0.5f,   0.5f,   0.5f,   0.5f,    0.5f }},
 	// 2026-09-19: TWO SHADOW RAYS EVERYWHERE, and it is the AA finding that pays for
 	// the rule above. At rt_metal_scale 1 the staircase reads 0.213-0.232 whether the
@@ -2171,6 +2173,14 @@ static const struct { cvar_t *cv; float v[M5_QUALITY_TIERS]; } m5_quality_levers
 // because a cvar the table does not own is a cvar that drifts. Stock declares 1
 // for honesty -- it runs no ray tracer at all, so the cell is inert there.
 	{ &rt_metal_shadowlights,   {        1,     3,       3,      3,      3,      3,       3 }},
+	// 2026-09-30, on Seb's word after the chainmail round ("perfect. set the tiers"):
+	// the two looks he passed on 2026-09-28/29 are pinned by every tier, the
+	// rt_metal_shadowlights shape -- identical in every column, so a click only
+	// PINS them and a config that has wandered reads Custom until a tier is clicked.
+	// Neither is a cost lever (the smoothed kernel casts the same rays; the fixture
+	// lights measured +0.15 ms of trace on e1m1's hall). Inert on Stock (rt_metal 0).
+	{ &rt_metal_shadowlights_smooth, {   1,     1,       1,      1,      1,      1,       1 }},
+	{ &rt_metal_fixturelights,  {      0.5,   0.5,     0.5,    0.5,    0.5,    0.5,     0.5 }},
 	// 2026-09-19, THE AA RULE ITSELF: the term is pixel-exact with the raster on every
 	// tier. Inert on Stock (rt_metal 0). This is the cell the whole retier turns on --
 	// see the block above for the measurement and for why it is CHEAPER, not dearer.
@@ -2225,7 +2235,12 @@ static const struct { cvar_t *cv; float v[M5_QUALITY_TIERS]; } m5_quality_levers
 	// count is cheap either way -- what it buys is convergence: 24 slices read +1.4%
 	// BRIGHTER than the true fog on demo23, 48 land on it (-0.01%), 16 is +3.7%.
 	// 32 is rich.cfg's value, which is what Ultimate must carry.
-	{ &rt_metal_fog_froxel_slices, {     16,    16,      24,     24,     24,     32,      32 }},
+	// 2026-09-28: Ultimate 32 -> 48 on Seb's word ("tiers need fixing at the end of
+	// this round"): 48 is what he plays, the cvar's own default, and the count the
+	// demo23 truth bed measured best (24 biased +1.4% bright, 48 unbiased); 48 -> 32
+	// measured x1.020, so the cell costs Ultimate ~2%. His config detects as
+	// Ultimate again with it. tier_ultimate_slices32 is the revert control.
+	{ &rt_metal_fog_froxel_slices, {     16,    16,      24,     24,     24,     32,      48 }},
 	{ &rt_metal_lightsample_hybrid, {      0,     0,       3,      3,      3,      3,       3 }},   // the single-pass hybrid on every pick-running tier (A5, Seb's eye 2026-09-13)
 	// 2026-09-19: bounce light is the Better -> Best rung, and it is the thinnest in
 	// the table -- measured 3.1% at this term (it fires per TERM pixel, so the 22% it
@@ -2921,6 +2936,7 @@ extern cvar_t r_shadow_realtime_dlight;
 extern cvar_t r_bloom;
 extern cvar_t r_bloom_brighten;
 extern cvar_t r_hdr_scenebrightness;   // used by the Brightness and Gamma page below
+extern cvar_t r_hud_brightness;        // gl_draw.c; the same page's last row (REVIEW 0.4)
 extern cvar_t r_hdr_glowintensity;
 
 static void M_Menu_Options_Graphics_AdjustSliders (cmd_state_t *cmd, int dir)
@@ -3485,8 +3501,9 @@ static void M_Options_M5Mods_Key (cmd_state_t *cmd, int k, int ascii)
 }
 
 
-// Brightness and Gamma.  5 rows: Reset, the master, two curve rows, scene
-// brightness.  The 2026-08-09 menu rationalisation removed Black Level
+// Brightness and Gamma.  6 rows: Reset, the master, two curve rows, scene
+// brightness, and HUD brightness (the in-game 2D dimmer, REVIEW 0.4; the page
+// itself never dims with it).  The 2026-08-09 menu rationalisation removed Black Level
 // (v_brightness -- a black-lift nobody should ship; console-only now) and the
 // thirteen colour-level rows (v_color_enable + the twelve per-channel
 // black/grey/white sliders): a display-calibration tool, dead at v_color_enable
@@ -3500,7 +3517,7 @@ static void M_Options_M5Mods_Key (cmd_state_t *cmd, int k, int ascii)
 // page), so each page showed the other's value as pinned at an end stop, and
 // one of them was labelled "Brightness" while driving v_contrast.  Every range
 // below now equals its own setter's clamp exactly.
-#define	OPTIONS_COLORCONTROL_ITEMS	5
+#define	OPTIONS_COLORCONTROL_ITEMS	6
 
 static int		options_colorcontrol_cursor;
 
@@ -3542,6 +3559,13 @@ static void M_Menu_Options_ColorControl_AdjustSliders (int dir)
 	{
 		Cvar_SetValueQuick (&r_hdr_scenebrightness, bound(0.1, r_hdr_scenebrightness.value + dir * 0.125, 4));
 	}
+	else if (options_colorcontrol_cursor == optnum++)
+	{
+		// the in-game 2D layer only (SCR_DrawScreen keeps the menus at full white, so
+		// this row stays readable at the 0.1 floor); the 0.05 steps clamp to exactly 1
+		// at the top, the old picture
+		Cvar_SetValueQuick (&r_hud_brightness, bound(0.1, r_hud_brightness.value + dir * 0.05, 1));
+	}
 }
 
 static void M_Options_ColorControl_Draw (void)
@@ -3553,8 +3577,8 @@ static void M_Options_ColorControl_Draw (void)
 
 	dither = Draw_CachePic_Flags ("gfx/colorcontrol/ditherpattern", CACHEPICFLAG_NOCLAMP);
 
-	// sized for 5 rows + the calibration block (was 288 for the 19-row page)
-	M_Background(320, 232);
+	// sized for 6 rows + the calibration block (232 for 5 rows; was 288 for the 19-row page)
+	M_Background(320, 240);
 
 	M_DrawPic(16, 4, "gfx/qplaque");
 	p = Draw_CachePic ("gfx/p_option");
@@ -3570,6 +3594,7 @@ static void M_Options_ColorControl_Draw (void)
 	M_Options_PrintSlider(  "            Gamma Trim", !v_color_enable.integer, v_gamma.value, 0.5, 2);
 	M_Options_PrintSlider(  "              Contrast", !v_color_enable.integer, v_contrast.value, 0.2, 3);
 	M_Options_PrintSlider(  "      Scene Brightness", true, r_hdr_scenebrightness.value, 0.1, 4);
+	M_Options_PrintSlider(  "        HUD Brightness", true, r_hud_brightness.value, 0.1, 1);
 	if (m_optnum != OPTIONS_COLORCONTROL_ITEMS)
 		Con_DPrintf("menu: Colour Control rows (%d) != OPTIONS_COLORCONTROL_ITEMS (%d)\n", m_optnum, OPTIONS_COLORCONTROL_ITEMS);
 
@@ -3639,6 +3664,7 @@ static void M_Options_ColorControl_Key(cmd_state_t *cmd, int k, int ascii)
 		case 0:
 			Cvar_SetValueQuick(&r_brightness, 0.5);   // the master's neutral point
 			Cvar_SetValueQuick(&r_hdr_scenebrightness, 1);
+			Cvar_SetValueQuick(&r_hud_brightness, 1);
 			Cvar_SetValueQuick(&v_gamma, 1);
 			Cvar_SetValueQuick(&v_contrast, 1);
 			Cvar_SetValueQuick(&v_brightness, 0);

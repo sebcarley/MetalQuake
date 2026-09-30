@@ -239,6 +239,9 @@ float RSurf_FogPoint(const float *v);
 // Murk transmittance between the eye and a world point, plus the colour it fades
 // towards. 1 when the murk is not running. For things drawn AFTER the murk pass
 // has been composited -- particles, blood, explosions -- which it cannot reach.
+/// r_shaderwarm (gl_rmain.c): write shaderwarm_learned.txt beside config.cfg -- called from Host_SaveConfig
+void R_ShaderWarm_Save(void);
+
 float R_Volumetric_TransmittanceToPoint(const vec3_t p, vec3_t out_tint);
 // SEPTEMBER S7: the murk's baked irradiance grid, read on the CPU for lit
 // particles (cl_particles_lighting 2). Resolve (bake once per map) between
@@ -272,6 +275,7 @@ qbool R_ReactiveStamp_Active(void);
 /// texture, in the R_EDR_Wanted shape -- one function, named consumers, rather
 /// than several expressions that happen to agree today.
 qbool R_MetalFX_TemporalWanted(void);
+qbool R_TAA_RayJitter(float out[2]);   // rt_metal_jitter (REVIEW 0.6): this frame's raster TAA jitter as the RAY-side offset, render pixels, kernel frame (x right, y up); false = not jittered
 float RSurf_FogVertex(const float *v);
 
 typedef enum r_refdef_scene_type_s {
@@ -535,6 +539,12 @@ void R_SkinFrame_Purge(void);
 skinframe_t *R_SkinFrame_FindNextByName( skinframe_t *last, const char *name );
 skinframe_t *R_SkinFrame_Find(const char *name, int textureflags, int comparewidth, int compareheight, int comparecrc, qbool add);
 skinframe_t *R_SkinFrame_LoadExternal(const char *name, int textureflags, qbool complain, qbool fallbacknotexture);
+// M5 (m5_lumacalibrate): the miptex fullbright-peak hint the world-texture
+// loader hands the external loader, and the scale it applied (0 = none)
+void R_SkinFrame_SetLumaHint(float miptexpeak);
+float R_SkinFrame_LastLumaScale(void);
+float R_SkinFrame_MiptexFullbrightPeak(const unsigned char *skindata, int width, int height);
+extern cvar_t m5_lumacalibrate;
 skinframe_t *R_SkinFrame_LoadExternal_SkinFrame(skinframe_t *skinframe, const char *name, int textureflags, qbool complain, qbool fallbacknotexture);
 skinframe_t *R_SkinFrame_LoadInternalBGRA(const char *name, int textureflags, const unsigned char *skindata, int width, int height, int comparewidth, int compareheight, int comparecrc, qbool sRGB);
 skinframe_t *R_SkinFrame_LoadInternalQuake(const char *name, int textureflags, int loadpantsandshirt, int loadglowtexture, const unsigned char *skindata, int width, int height);

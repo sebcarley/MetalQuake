@@ -1702,6 +1702,8 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 	texture_t *tx, *tx2, *anims[10], *altanims[10], *currentskynoshadowtexture;
 	texture_t backuptex;
 	unsigned char *data, *mtdata;
+	float lumapeak;
+	int lumacount = 0;
 	const char *s;
 	char mapname[MAX_QPATH], name[MAX_QPATH];
 	unsigned char zeroopaque[4], zerotrans[4];
@@ -1903,6 +1905,16 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 		stockart = cls.state != ca_dedicated && m5_stock.integer
 			&& !Mod_LookupQ3Shader(va(vabuf, sizeof(vabuf), "%s/%s", mapname, name))
 			&& !Mod_LookupQ3Shader(name);
+		// M5 (m5_lumacalibrate): hand the external loader this texture's own
+		// 1996 fullbright peak, so a replacement pack's dim glow layer can be
+		// lifted to it. Both external attempts below (the Q3-shader path,
+		// which is the one a bare QRP image takes, and the LoadExternal pair)
+		// read the hint; it is cleared once this texture is done so nothing
+		// loaded later can inherit it.
+		lumapeak = 0;
+		if (cls.state != ca_dedicated && m5_lumacalibrate.integer && r_fullbrights.integer && mtdata && !loadmodel->brush.ishlbsp)
+			lumapeak = R_SkinFrame_MiptexFullbrightPeak(mtdata, mtwidth, mtheight);
+		R_SkinFrame_SetLumaHint(lumapeak);
 		// try to load shader or external textures, but first we have to backup the texture_t because shader loading overwrites it even if it fails
 		backuptex = loadmodel->data_textures[i];
 		if (name[0] && !stockart && /* HACK */ strncmp(name, "sky", 3) /* END HACK */ && (Mod_LoadTextureFromQ3Shader(loadmodel->mempool, loadmodel->name, loadmodel->data_textures + i, va(vabuf, sizeof(vabuf), "%s/%s", mapname, name), false, false, TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, MATERIALFLAG_WALL) ||
@@ -1911,6 +1923,9 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 			// set the width/height fields which are used for parsing texcoords in this bsp format
 			tx->width = mtwidth;
 			tx->height = mtheight;
+			if (R_SkinFrame_LastLumaScale() > 0)
+				lumacount++;
+			R_SkinFrame_SetLumaHint(0);
 			// M5 (m5_liquidflags): this `continue` skips the ENTIRE Q1 name-based
 			// classification below -- material flags AND supercontents -- so a
 			// liquid whose image came from a replacement pack was loaded as a
@@ -1976,7 +1991,10 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 				skinframe = R_SkinFrame_LoadExternal(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s/%s", mapname, tx->name), TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, false, false);
 				if (!skinframe)
 					skinframe = R_SkinFrame_LoadExternal(gamemode == GAME_TENEBRAE ? tx->name : va(vabuf, sizeof(vabuf), "textures/%s", tx->name), TEXF_ALPHA | TEXF_MIPMAP | TEXF_ISWORLD | TEXF_PICMIP | TEXF_COMPRESS, false, false);
+				if (skinframe && R_SkinFrame_LastLumaScale() > 0)
+					lumacount++;
 			}
+			R_SkinFrame_SetLumaHint(0);
 			if (!skinframe
 				// HACK: It loads custom skybox textures as a wall if loaded as a skinframe.
 				|| !strncmp(tx->name, "sky", 3))
@@ -2060,6 +2078,11 @@ static void Mod_Q1BSP_LoadTextures(sizebuf_t *sb)
 			currentskynoshadowtexture++;
 		}
 	}
+	// M5 (m5_lumacalibrate): one line per map, the M5 maplights shape -- the
+	// count is the feature's only console evidence (a rescaled layer looks
+	// like any other glow layer), and smoke greps it
+	if (cls.state != ca_dedicated && m5_lumacalibrate.integer && lumacount > 0)   // silent on the item-box BSPs
+		Con_DPrintf("M5 luma: %d replacement glow layers rescaled to the 1996 fullbright peak\n", lumacount);
 
 	// sequence the animations
 	for (i = 0;i < nummiptex;i++)
