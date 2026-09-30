@@ -39,6 +39,7 @@ LOOK = (
     # the ray-traced light
     'rt_metal_walllight', 'rt_metal_ambient', 'rt_metal_color', 'rt_metal_darkness',
     'rt_metal_softness', 'rt_metal_history', 'rt_metal_viewmodel', 'rt_metal_liquids',
+    'rt_metal_liquids_rt', 'rt_metal_liquids_reflect', 'rt_metal_liquids_ripple',   # 2026-09-30: his water (VKRT 1/1b)
     'rt_metal_lavalights', 'rt_metal_jitter',
     # water
     'r_wateralpha', 'r_wateralpha_force',
