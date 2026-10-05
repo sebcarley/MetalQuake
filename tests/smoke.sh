@@ -28,6 +28,7 @@
 #   G   menu row self-checks, idle sway, maplights statistic
 #   H   Scrag venom + its master gate (two boots — the QC print is first-event
 #       per map, so a mid-boot toggle cannot test the gate)
+#   H4  the flamethrower, the tenth weapon + its master gate (two boots, dm4)
 #   H2  ball lightning, the ninth weapon + its master gate (two boots, same
 #       first-event reasoning as H); the knot and the effectinfo handles
 #   I   the mission packs + Arcane Dimensions (skip when not installed)
@@ -546,6 +547,60 @@ EOF
    +map e1m1 +exec smoketest_h3.cfg >"$LOG_H3" 2>&1
 check  "M5 ball: it clears the doorway"  "M5 ball: earthed [0-9][0-9][0-9][0-9]+\\." "$LOG_H3"
 rm -f "$LOG_H3" m5/smoketest_h3.cfg; rm -rf "$SANDBOX_H3"
+
+# --- run H4: the flamethrower, the tenth weapon (FLAMETHROWER.md, 2026-10-03) ---
+# The H2 shape: its own userdir, a pack of soldiers, give 8 for the thunderbolt
+# that grants the flamethrower (M5Flame_Sync), impulse 203 to select it. The
+# trigger is held while the view sweeps (+left) so the napalm lands in many
+# places: "stream" proves W_Attack -> player_flame1 -> W_FireFlame, "fire patch
+# lit" a globule reaching the world, "refuelled" the stream landing on its own
+# fire, and "ignited" napalm setting something alight -- made certain by the
+# last two seconds hosing the floor at the player's own feet, which must set
+# HIM alight (the fire burns its owner; god mode stops the damage, not the
+# ignition), so the check does not hang on where the wave spawned. The cap is
+# set to 3 so "cap reached" proves the oldest patch is retired rather than a
+# fourth light lit. All first-event per map. The control boots at cvar 0:
+# impulse 203 refuses and nothing spawns. The schedule starts at 5 s, not 2:
+# under a loaded machine dm4's signon ran past a 2-second give and the run
+# read 3 of 9 (2026-10-03).
+SANDBOX_H4=$(mktemp -d)
+LOG_H4=$(mktemp)
+DP_H4="./darkplaces-sdl -userdir $SANDBOX_H4 +vid_renderer gl $DP_EXTRA"
+cat > m5/smoketest_h4.cfg <<'EOF'
+sv_cheats 1
+defer 5 "god"
+defer 5 "give 8"
+defer 5 "give c 200"
+defer 6 "impulse 210"
+defer 7 "bind 0"
+defer 8 "impulse 203"
+defer 8.6 "cl_yawspeed 60"
+defer 9 "+attack"
+defer 9 "+left"
+defer 16 "-left"
+defer 16 "cl_pitchspeed 400"
+defer 16 "+lookdown"
+defer 16.5 "-lookdown"
+defer 18 "-attack"
+defer 19 quit
+EOF
+$DP_H4 -window -nosound +developer 1 +m5_stock 0 +m5_flamer 1 +m5_flamer_break 0.24 +m5_flamer_patches 3 +m5_horde 1 +m5_horde_species 1 +map dm4 +exec smoketest_h4.cfg >"$LOG_H4" 2>&1
+check  "M5 flamer: effects resolve"               "M5 flamer: effects stream [1-9][0-9]* splash [1-9][0-9]* patch [1-9][0-9]* steam [1-9][0-9]*" "$LOG_H4"
+check  "M5 flamer: the stream fires"              "M5 flamer: stream" "$LOG_H4"
+check  "M5 flamer: the hose draws"               "M5 flamer: hose$" "$LOG_H4"
+check  "M5 flamer: the hose breaks into droplets" "M5 flamer: hose breaks into droplets" "$LOG_H4"
+check  "M5 flamer: napalm sets a target alight"   "M5 flamer: ignited" "$LOG_H4"
+check  "M5 flamer: fire patches light"            "M5 flamer: fire patch lit" "$LOG_H4"
+check  "M5 flamer: a patch is refuelled"          "M5 flamer: patch refuelled" "$LOG_H4"
+check  "M5 flamer: the patch cap holds"           "M5 flamer: patch cap 3 reached" "$LOG_H4"
+# KEY 0 on a fresh userdir: id1's default.cfg binds it to the do-nothing
+# "impulse 0", which m5_bindifunbound now treats as unbound (keys.c) -- before
+# that the engine's own bind of key 0 to the flamethrower could never land.
+check  "M5 flamer: key 0 is bound to it"          '"0" = "impulse 203"' "$LOG_H4"
+$DP_H4 -window -nosound +developer 1 +m5_stock 0 +m5_flamer 0 +m5_horde 1 +m5_horde_species 1 +map dm4 +exec smoketest_h4.cfg >"$LOG_H4" 2>&1
+check  "M5 flamer: master gate refuses impulse 203" "the flamethrower is off" "$LOG_H4"
+absent "M5 flamer: master gate spawns nothing"    "M5 flamer: (stream|fire patch)" "$LOG_H4"
+rm -f "$LOG_H4" m5/smoketest_h4.cfg; rm -rf "$SANDBOX_H4"
 
 
 # --- run G: weapon feel (SEPTEMBER2 Part G) ---------------------------------
@@ -1302,8 +1357,17 @@ EOF
 	# The zero-texel count is part of the assertion, not decoration: an all-zero
 	# buffer hashes perfectly consistently and would otherwise be a very
 	# convincing pass.
-	RTP_GL=$(mktemp); RTP_MT=$(mktemp)
-	for rtb in gl metal; do
+	# A LIBRARY, NOT A SINGLE PAIR (2026-10-03, the 0.1.4 consolidation). One
+	# boot per backend failed up to two runs in three on loaded days (2026-09-01:
+	# twelve boots, six hashes, the backends agreeing on two runs of six) -- yet
+	# BOTH backends always drew from the SAME set of hashes, so the failures were
+	# the documented early-frame two-state artefact, not a divergence. A check
+	# that fails that often trains people to ignore smoke. So a mismatch now
+	# boots one more of each, up to three per backend, and passes if any GL hash
+	# equals any Metal hash -- the demo5 gate's own library shape. Its teeth are
+	# unchanged: a real cross-backend difference shares no hash however many
+	# boots it gets. The quiet-day cost is the same two boots as before.
+	rt_termprobe_boot () {   # $1 backend, $2 output file
 		SANDBOX_R=$(mktemp -d)
 		cat > m5/smoketest_rt.cfg <<EOF
 sv_freezenonclients 1
@@ -1318,30 +1382,41 @@ r_volumetric 0
 rt_metal 1
 rt_metal_history 0
 rt_metal_walllight 0
-defer 1 "vid_renderer $rtb; vid_restart"
+defer 1 "vid_renderer $1; vid_restart"
 defer 4 "map e1m3"
 defer 6 "sv_cheats 1"
 defer 7 "noclip"
 defer 12 "rt_metal_termprobe"
 defer 14 quit
 EOF
-		if [ "$rtb" = gl ]; then RTOUT="$RTP_GL"; else RTOUT="$RTP_MT"; fi
-		./darkplaces-sdl -userdir "$SANDBOX_R" -window -nosound +exec smoketest_rt.cfg >"$RTOUT" 2>&1
+		./darkplaces-sdl -userdir "$SANDBOX_R" -window -nosound +exec smoketest_rt.cfg >"$2" 2>&1
 		rm -f m5/smoketest_rt.cfg; rm -rf "$SANDBOX_R"
+	}
+	RTP=$(mktemp); RTH_GLS=""; RTH_MTS=""; RTZ_BAD=0; RTH_NONE=0; RTMATCH=0; rtn=0
+	while [ $rtn -lt 3 ] && [ $RTMATCH -eq 0 ]; do
+		rtn=$((rtn + 1))
+		for rtb in gl metal; do
+			rt_termprobe_boot $rtb "$RTP"
+			rth=$(grep -a "rt_metal_termprobe: slot" "$RTP" | tail -1 | sed 's/.*hash \([0-9a-f]*\).*/\1/')
+			rtz=$(grep -a "rt_metal_termprobe: slot" "$RTP" | tail -1 | sed 's/.*zerotexels \([0-9]*\) of.*/\1/')
+			if [ -z "$rth" ]; then RTH_NONE=1; continue; fi
+			[ "$rtb" = gl ] && [ "$rtz" != "0" ] && RTZ_BAD=1
+			if [ "$rtb" = gl ]; then RTH_GLS="$RTH_GLS $rth"; else RTH_MTS="$RTH_MTS $rth"; fi
+		done
+		[ $RTH_NONE -eq 1 ] && break
+		for g in $RTH_GLS; do for m in $RTH_MTS; do [ "$g" = "$m" ] && RTMATCH=1; done; done
 	done
-	RTH_GL=$(grep -a "rt_metal_termprobe: slot" "$RTP_GL" | tail -1 | sed 's/.*hash \([0-9a-f]*\).*/\1/')
-	RTH_MT=$(grep -a "rt_metal_termprobe: slot" "$RTP_MT" | tail -1 | sed 's/.*hash \([0-9a-f]*\).*/\1/')
-	RTZ_GL=$(grep -a "rt_metal_termprobe: slot" "$RTP_GL" | tail -1 | sed 's/.*zerotexels \([0-9]*\) of.*/\1/')
-	if [ -z "$RTH_GL" ] || [ -z "$RTH_MT" ]; then
+	if [ $RTH_NONE -eq 1 ] || [ -z "$RTH_GLS" ] || [ -z "$RTH_MTS" ]; then
 		failt "metal: RT term buffer is byte-identical across backends (probe produced no hash)"
-	elif [ "$RTZ_GL" != "0" ]; then
+	elif [ $RTZ_BAD -eq 1 ]; then
 		failt "metal: RT term buffer is byte-identical across backends (GL buffer is all zeros - vacuous)"
-	elif [ "$RTH_GL" = "$RTH_MT" ]; then
+	elif [ $RTMATCH -eq 1 ]; then
 		pass  "metal: RT term buffer is byte-identical across backends"
+		[ $rtn -gt 1 ] && echo "      (matched after $rtn boots per backend: gl$RTH_GLS / metal$RTH_MTS)"
 	else
-		failt "metal: RT term buffer is byte-identical across backends (gl $RTH_GL vs metal $RTH_MT)"
+		failt "metal: RT term buffer is byte-identical across backends (no shared hash in $rtn boots each: gl$RTH_GLS vs metal$RTH_MTS)"
 	fi
-	rm -f "$RTP_GL" "$RTP_MT"
+	rm -f "$RTP"
 
 	# THE ESCAPE HATCH, INVERTED AT PHASE 8. Run K used to assert vid_renderer
 	# was NOT archived -- the Phase 0 safety, when the Metal path drew nothing

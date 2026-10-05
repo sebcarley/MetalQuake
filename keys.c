@@ -1720,7 +1720,11 @@ static void Key_BindIfUnbound_f(cmd_state_t *cmd)
 		Con_Printf("\"%s\" isn't a valid key\n", Cmd_Argv(cmd, 1));
 		return;
 	}
-	if (keybindings[0][b] && keybindings[0][b][0])
+	// id1's default.cfg binds 0 to "impulse 0", which does nothing at all (no
+	// QuakeC reads impulse 0); that is a placeholder, not a player's choice, so
+	// it counts as unbound -- otherwise key 0 could never take the flamethrower
+	// (FLAMETHROWER.md, measured on a fresh userdir 2026-10-03)
+	if (keybindings[0][b] && keybindings[0][b][0] && strcmp(keybindings[0][b], "impulse 0"))
 		return;
 	Key_SetBinding(b, 0, Cmd_Argv(cmd, 2));
 }

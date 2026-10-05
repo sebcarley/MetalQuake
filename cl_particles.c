@@ -372,6 +372,27 @@ cvar_t m5_dust_radius = {CF_CLIENT | CF_ARCHIVE, "m5_dust_radius", "320", "how f
 cvar_t m5_dust_size = {CF_CLIENT | CF_ARCHIVE, "m5_dust_size", "0.3", "dust mote size in world units. 0.3 (the default since 2026-09-19, Seb's own) is a sub-pixel fleck at 1080p; the old 1.2 is a visible speck"};
 cvar_t m5_dust_alpha = {CF_CLIENT | CF_ARCHIVE, "m5_dust_alpha", "0.5", "dust mote opacity at birth (0-1); each mote fades out over its 8-16 second life. 0.5 (the default since 2026-09-28: Seb, \"dust is still too bright, needs to be 50%% darker\" -- the motes blend by alpha, so half the opacity is half the brightness against the room, under a muzzle flash included) goes with the small m5_dust_size; 1 was the 2026-09-19 default, his own then, and the old 0.35 goes with the larger mote"};
 cvar_t m5_dust_speed = {CF_CLIENT | CF_ARCHIVE, "m5_dust_speed", "5", "how briskly new dust drifts: the random velocity a mote is born with, world units per second (5 since 2026-09-19, Seb's own; was 6)"};
+// The flamethrower's THROAT (FLAMETHROWER.md, 2026-10-04): the first stretch of
+// the stream drawn on the CLIENT from the view weapon's own nozzle, every
+// rendered frame, along this frame's aim. The server's napalm is a frame or two
+// behind the view, which in a fast turn put the fire at the gun 13-26 degrees
+// off to the side (measured: the server kept 60 globules alive through an
+// 800-degree-a-second whip and none of them drew at the muzzle). Now the near
+// stream tracks the nozzle exactly and the far stream trails, as a hose does.
+cvar_t m5_flamer_hose = {CF_CLIENT | CF_ARCHIVE, "m5_flamer_hose", "1", "flamethrower: draw the WHOLE stream on the client as a hose of particles from the gun model's own nozzle, every rendered frame, each particle sent along the aim of the moment it left (interpolated across the frame), flying the full arc and dying where the arc meets a wall (m5flame_hose in m5/effectinfo.txt). The server's napalm globules are then invisible and carry only the damage, the ignition and the fire patches. 0 = no hose: set m5_flamer_servertrail 1 to see the server's globules instead (the look before 2026-10-04: a fan of one-aim-per-server-frame spokes in a fast turn)"};
+// THE HYBRID (2026-10-05). Seb: "a hose for the first part of its travel, and
+// then naturally gradually breaks up into droplets". The hose's own particles
+// stop at a randomised breakup time, dimming as they go, and from about there on
+// the same emitter -- the same aim of the same moment, so the two join exactly
+// in a sweep -- places DROPLETS (m5flame_drops): small blobs of fire with a
+// bright head, a streak along the flow and a comet tail that drags behind as
+// they fly, the server-globule look of the first two versions on the far
+// stretch. 0 = the hose all the way, the 2026-10-04 look byte for byte.
+// DEFAULT 0.22 / spread 0.22 since 2026-10-05 (0.1.4), Seb's own values:
+// "Ship your 0.22 / 0.22".
+cvar_t m5_flamer_break = {CF_CLIENT | CF_ARCHIVE, "m5_flamer_break", "0.22", "flamethrower hose: seconds of flight the stream holds together as a hose before it breaks up into droplets. 0.22 (about 140 units at the default speed) is the DEFAULT since 2026-10-05, Seb's own tuned value (exec flamer_hybrid.cfg). Each hose particle stops somewhere inside m5_flamer_break_spread of it, dimming as it goes, so the hose frays rather than ending at a line; from there the stream is droplets of fire (m5flame_drops in m5/effectinfo.txt, m5_flamer_drops a second). 0 = the hose all the way to the wall, the look Seb passed on 2026-10-04 and the default until 0.1.4 (exec flamer_hoseonly.cfg). Needs m5_flamer_hose 1"};
+cvar_t m5_flamer_break_spread = {CF_CLIENT | CF_ARCHIVE, "m5_flamer_break_spread", "0.22", "flamethrower hose: how ragged the breakup is (0.22, Seb's own, the default since 2026-10-05), in seconds of flight -- each hose particle stops at a random time within this window around m5_flamer_break, and the droplets begin across the same window, so a bigger value is a longer, softer fraying and 0 a clean cut"};
+cvar_t m5_flamer_drops = {CF_CLIENT | CF_ARCHIVE, "m5_flamer_drops", "40", "flamethrower hose: droplets a second the stream breaks into past m5_flamer_break. Fewer reads as a few fat globs flung apart, more as a stream still nearly whole; 0 = the hose simply frays out with nothing after it. Not scaled by cl_particles_quality -- that thickens each droplet instead, so the breakup pattern is the same at every quality"};
 cvar_t m5_muzzleflash = {CF_CLIENT | CF_ARCHIVE, "m5_muzzleflash", "1", "BEAUTY A3 (2026-09-13; DEFAULT 1 since 2026-09-16 on Seb's QA -- \"the flash is fine\", \"sparks are fine\", then \"default on\"): draw a muzzle flash. Quake has never drawn one -- the flash is a dynamic LIGHT and nothing else, so with the murk on it reads as a soft glow round a barrel that shows no flash of its own. 1 = a brief starburst with a hot core at the muzzle of your shotgun, super shotgun, nailguns, grenade and rocket launchers (the thunderbolt and the ball are their own flash), and a smaller one on every monster's gun as it fires; the M5 shotgun's muzzle spray becomes a spray of hot-core streaks that leaves the barrel's tip and moves with the gun (m5_muzzleflash_sparks and its six companions tune it), instead of the wide yellow rays the round blob cell made of it. Gone in about 80 ms; brighter than white on the float scene buffer, so the bloom gives it a core. 0 = the 1996 picture, the light alone (exec flash_off.cfg)"};
 cvar_t m5_muzzleflash_forward = {CF_CLIENT | CF_ARCHIVE, "m5_muzzleflash_forward", "0", "trim on the drawn muzzle flash's position along the gun, world units (the per-weapon table is in cl_particles.c)"};
 cvar_t m5_muzzleflash_up = {CF_CLIENT | CF_ARCHIVE, "m5_muzzleflash_up", "0", "trim on the drawn muzzle flash's height above the gun, world units"};
@@ -1127,11 +1148,356 @@ static void M5_MuzzleSparks_Update(void)
 	m5_nsparks = k;
 }
 
+static double m5_hose_time;
+static int m5_hose_fx = -1;
+static int m5_drops_fx = -1;
+static float m5_drops_acc;		// droplets owed, carried across frames
+static qbool m5_hose_live;		// last frame fired: m5_hose_nozzle/aim hold its nozzle and aim
+static qbool m5_hose_reported;
+static qbool m5_drops_reported;
+	// the first-event line, once per connection (tests/smoke.sh asserts it)
+static vec3_t m5_hose_nozzle, m5_hose_aim;
+extern cvar_t m5_flamer_speed, m5_flamer_gravity, m5_flamer_life;
+
+// Seconds along the arc from `org` with velocity `vel` under `grav` until it
+// meets the world (or sky), stepped in tenths up to `life`; -1 if it never
+// does. One trace per step against the world alone -- a few dozen a frame at
+// the fastest turn, where tracing every hose particle every frame would be a
+// thousand.
+static float M5_FlamerHose_PathHit(const vec3_t org, const vec3_t vel, const vec3_t grav, float life)
+{
+	vec3_t a, b;
+	float t, step = 0.1f;
+	trace_t trace;
+	VectorCopy(org, a);
+	for (t = 0.0f; t < life; t += step)
+	{
+		float t2 = min(t + step, life);
+		b[0] = org[0] + vel[0] * t2 + 0.5f * grav[0] * t2 * t2;
+		b[1] = org[1] + vel[1] * t2 + 0.5f * grav[1] * t2 * t2;
+		b[2] = org[2] + vel[2] * t2 + 0.5f * grav[2] * t2 * t2;
+		trace = CL_TraceLine(a, b, MOVE_NOMONSTERS, NULL, SUPERCONTENTS_SOLID | SUPERCONTENTS_SKY, 0, 0, collision_extendmovelength.value, true, false, NULL, false, false);
+		if (trace.fraction < 1.0f)
+			return t + (t2 - t) * trace.fraction;
+		VectorCopy(b, a);
+	}
+	return -1.0f;
+}
+
+// One particle of a hose or droplet layer at `pos` moving at `vnow`, with the
+// layer's own numbers from m5/effectinfo.txt. `wait` holds it unseen and
+// unmoved for that many seconds (delayedspawn: a droplet is placed where it
+// will be when the stream breaks up, and appears then). The layer's own
+// `delay` is M5_FlamerHose_LayerDelay's, applied AFTER the caller's wall
+// clamp, as the hose always has. Returns NULL when the pool is full.
+static particle_t *M5_FlamerHose_Spawn(const particleeffectinfo_t *info, const vec3_t pos, const vec3_t vnow, float wait)
+{
+	vec3_t rvec;
+	int tex = info->tex[0];
+	particle_t *part;
+	if (info->tex[1] > info->tex[0])
+	{
+		tex = (int)lhrandom(info->tex[0], info->tex[1]);
+		tex = min(tex, info->tex[1] - 1);
+	}
+	VectorRandom(rvec);
+	part = CL_NewParticle(pos, info->particletype, info->color[0], info->color[1], tex, lhrandom(info->size[0], info->size[1]), info->size[2], lhrandom(info->alpha[0], info->alpha[1]), info->alpha[2], info->gravity, info->bounce,
+		pos[0] + info->originoffset[0] + info->originjitter[0] * rvec[0], pos[1] + info->originoffset[1] + info->originjitter[1] * rvec[1], pos[2] + info->originoffset[2] + info->originjitter[2] * rvec[2],
+		vnow[0] * info->velocitymultiplier + info->velocityoffset[0] + info->velocityjitter[0] * rvec[0], vnow[1] * info->velocitymultiplier + info->velocityoffset[1] + info->velocityjitter[1] * rvec[1], vnow[2] * info->velocitymultiplier + info->velocityoffset[2] + info->velocityjitter[2] * rvec[2],
+		info->airfriction, info->liquidfriction, 0, 0, info->countabsolute <= 0, lhrandom(info->time[0], info->time[1]), info->stretchfactor, info->blendmode, info->orientation, info->staincolor[0], info->staincolor[1], -1, lhrandom(info->stainalpha[0], info->stainalpha[1]), lhrandom(info->stainsize[0], info->stainsize[1]), lhrandom(info->rotate[0], info->rotate[1]), lhrandom(info->rotate[2], info->rotate[3]), NULL);
+	if (!part)
+		return NULL;
+	if (wait > 0.0f)
+	{
+		part->delayedspawn = cl.time + wait;
+		part->die += wait;
+	}
+	return part;
+}
+
+static void M5_FlamerHose_LayerDelay(const particleeffectinfo_t *info, particle_t *part)
+{
+	if (info->delay[0] > 0.0f || info->delay[1] > 0.0f)
+	{
+		float dly = lhrandom(min(info->delay[0], info->delay[1]), max(info->delay[0], info->delay[1]));
+		part->delayedspawn = max(part->delayedspawn, cl.time) + dly;
+		part->die += dly;
+	}
+}
+
+// Whether a hose or droplet layer draws at all: the effect's own underwater
+// flags and the player's smoke/spark switches, as the effect spawner tests them.
+static qbool M5_FlamerHose_LayerLive(const particleeffectinfo_t *info, int fx, qbool underwater)
+{
+	if (info->effectnameindex != fx || !(info->flags & PARTICLEEFFECT_DEFINED))
+		return false;
+	if (((info->flags & PARTICLEEFFECT_UNDERWATER) && !underwater) || ((info->flags & PARTICLEEFFECT_NOTUNDERWATER) && underwater))
+		return false;
+	if (info->particletype == pt_smoke && !cl_particles_smoke.integer)
+		return false;
+	if (info->particletype == pt_spark && !cl_particles_sparks.integer)
+		return false;
+	return true;
+}
+
+// The flamethrower's HOSE: see m5_flamer_hose. Fires while the view weapon is
+// progs/v_flamer.mdl and its frame is a firing one (the flame frames cycle
+// weaponframe 1-4 while the trigger is held; 0 is at rest). The nozzle is the
+// model's own, in model space (qc/make_v_flamer.py: x 31.4, z -11.8), so it
+// follows the bob and the recoil; in a chase view it is the server's muzzle
+// point off the player. Rate is per second through the effect's `count`
+// lines (pcount = the frame's time), so it does not depend on fps.
+//
+// WHY A HOSE AND NOT THE SERVER'S TRAIL (2026-10-04): a server globule is sent
+// along ONE aim per server frame, so a 300 deg/s turn lays the napalm as a fan
+// of spokes 4 degrees apart, and the trails drawn along those globules read
+// as a string of beads whatever the globule rate ("a sausage making machine
+// without the links"). The hose emits from the aim of EACH MOMENT: the frame's
+// time is cut into steps of at most a degree of turn, every step's particles
+// leave along the aim interpolated between the last frame's and this one's,
+// back-dated by their age, so a sweep is one curve at any frame rate and the
+// fire leaves the gun with no network lag. Each degree's arc is traced once
+// against the world, and its particles are clamped to die where it hits.
+static void M5_FlamerHose_Update(void)
+{
+	const entity_render_t *e = &cl.viewent.render;
+	vec3_t nozzle_local = {31.4f, 0.0f, -11.8f};
+	vec3_t nozzle, eye, fwd, left, up, aimpt, aim, grav, n0, a0;
+	float dt, ft, speed, life, gfrac, cosang, ang, thit[24], brk, spread;
+	int k, steps, ei;
+	qbool chase, underwater;
+	particleeffectinfo_t *info;
+	dt = bound(0.0f, (float)(cl.time - m5_hose_time), 0.05f);
+	m5_hose_time = cl.time;
+	if (cls.state != ca_connected)
+		m5_hose_reported = m5_drops_reported = false;
+	// a second call inside one frame (dt 0) must not forget the last frame's
+	// nozzle and aim, or no frame ever interpolates and the sweep is a fan
+	// of per-frame spokes again (measured on the overhead bed: pearls)
+	if (dt <= 0.0f)
+		return;
+	if (!m5_flamer_hose.integer || !cl_particles.integer || cls.state != ca_connected)
+	{
+		m5_hose_live = false;
+		return;
+	}
+	if (!e->model || strcmp(e->model->name, "progs/v_flamer.mdl") || cl.stats[STAT_WEAPONFRAME] == 0 || cl.stats[STAT_HEALTH] <= 0)
+	{
+		m5_hose_live = false;
+		return;
+	}
+	if (m5_hose_fx < 0 || (m5_hose_fx > 0 && strcmp(CL_ParticleEffectNameForIndex(m5_hose_fx), "m5flame_hose")))
+		m5_hose_fx = CL_ParticleEffectIndexForName("m5flame_hose");
+	if (m5_hose_fx <= 0)
+	{
+		m5_hose_live = false;
+		return;
+	}
+	if (m5_drops_fx < 0 || (m5_drops_fx > 0 && strcmp(CL_ParticleEffectNameForIndex(m5_drops_fx), "m5flame_drops")))
+		m5_drops_fx = CL_ParticleEffectIndexForName("m5flame_drops");
+	chase = chase_active.integer != 0;
+	if (chase)
+	{
+		// no view model to take the nozzle from: the server's own muzzle point
+		// (qc/m5flame.qc M5Flame_Emit) off the player entity, along the view
+		AngleVectors(cl.viewangles, fwd, NULL, up);
+		Matrix4x4_OriginFromMatrix(&cl.entities[cl.viewentity].render.matrix, eye);
+		eye[2] += 22.0f;
+		VectorMA(eye, 30.0f, fwd, nozzle);
+		VectorMA(nozzle, -14.0f, up, nozzle);
+	}
+	else
+	{
+		Matrix4x4_ToVectors(&e->matrix, fwd, left, up, eye);
+		VectorNormalize(fwd);
+		Matrix4x4_Transform(&e->matrix, nozzle_local, nozzle);
+		// the matrix is identity with no view model (intermission): never fire
+		// at the world origin -- the muzzle flash's own guard
+		if (VectorDistance2(nozzle, eye) > 4096.0f)
+		{
+			m5_hose_live = false;
+			return;
+		}
+	}
+	if (CL_PointSuperContents(nozzle) & SUPERCONTENTS_LIQUIDSMASK)
+	{
+		m5_hose_live = false;
+		return;
+	}
+	// steered onto the crosshair from below the eye, as the server's napalm is
+	VectorMA(eye, 2048.0f, fwd, aimpt);
+	VectorSubtract(aimpt, nozzle, aim);
+	VectorNormalize(aim);
+	speed = m5_flamer_speed.value > 0.0f ? m5_flamer_speed.value : 650.0f;
+	life = m5_flamer_life.value > 0.1f ? m5_flamer_life.value : 1.1f;
+	gfrac = m5_flamer_gravity.value > 0.0f ? m5_flamer_gravity.value : 0.5f;
+	VectorSet(grav, 0.0f, 0.0f, -cl.movevars_gravity * gfrac);
+	// THE STEP THE PARTICLE UPDATE IS ABOUT TO TAKE. The update (R_DrawParticles)
+	// runs after this and advances every particle by cl.time - particles_updatetime,
+	// the new ones included, so a particle placed where it belongs NOW lands a
+	// whole step ahead. With a steady clock that is one uniform shift nobody sees;
+	// the client's clock is not steady (it walks four steps of 14.7 ms and one of
+	// 25 ms, measured, the net-time sync nudging it to the server's 72 Hz), and
+	// the uneven shifts left a 16-unit HOLE in the stream every 84 ms -- the
+	// pearls the overhead bed showed. The muzzle sparks pay the same step back.
+	ft = bound(0.0f, (float)(cl.time - cl.particles_updatetime), 1.0f);
+	if (!m5_hose_live)
+	{
+		VectorCopy(nozzle, m5_hose_nozzle);
+		VectorCopy(aim, m5_hose_aim);
+	}
+	VectorCopy(m5_hose_nozzle, n0);
+	VectorCopy(m5_hose_aim, a0);
+	// the arc's time to the wall, once per degree of this frame's turn
+	cosang = bound(-1.0f, DotProduct(a0, aim), 1.0f);
+	ang = acos(cosang) * (180.0f / M_PI);
+	steps = (int)ceil(ang / 1.0f);
+	steps = bound(1, steps, 24);
+	for (k = 0; k < steps; k++)
+	{
+		vec3_t n, a, v;
+		float f = (k + 0.5f) / steps;
+		VectorLerp(n0, f, nozzle, n);
+		VectorLerp(a0, f, aim, a);
+		VectorNormalize(a);
+		VectorScale(a, speed, v);
+		VectorMA(v, 0.4f, cl.velocity, v);
+		thit[k] = M5_FlamerHose_PathHit(n, v, grav, life);
+	}
+	// EVERY PARTICLE ITS OWN MOMENT: handing each degree's particles to the
+	// effect spawner as one box put them down in clusters, and from above the
+	// tube was a string of pearls (measured on the overhead bed). So the
+	// m5flame_hose layers are spawned here, one particle at a time, each at a
+	// random instant of the frame's window with the nozzle, the aim and the
+	// flight time of that instant; the layer's numbers are the effectinfo's own.
+	underwater = (CL_PointSuperContents(nozzle) & (SUPERCONTENTS_WATER | SUPERCONTENTS_SLIME)) != 0;
+	// THE BREAKUP (m5_flamer_break): past it the hose's own particles are gone
+	// and the stream is droplets. The smoke rises off the whole length.
+	brk = max(0.0f, m5_flamer_break.value);
+	spread = bound(0.0f, m5_flamer_break_spread.value, brk);
+	for (ei = 0, info = particleeffectinfo; ei < MAX_PARTICLEEFFECTINFO && info->effectnameindex; ei++, info++)
+	{
+		float cnt;
+		qbool breaks;
+		if (!M5_FlamerHose_LayerLive(info, m5_hose_fx, underwater))
+			continue;
+		breaks = brk > 0.0f && info->particletype != pt_smoke;
+		cnt = info->countabsolute + dt * info->countmultiplier * cl_particles_quality.value;
+		info->particleaccumulator = bound(0, info->particleaccumulator + cnt, 16384);
+		for (; info->particleaccumulator >= 1; info->particleaccumulator--)
+		{
+			vec3_t n, a, v, pos, vnow;
+			float f = lhrandom(0, 1);
+			float age = dt * (1.0f - f);		// how long ago this particle left the nozzle
+			float remain = 0.0f;
+			particle_t *part;
+			k = min((int)(f * steps), steps - 1);
+			if (thit[k] >= 0.0f && thit[k] <= age)
+				continue;				// on the wall already
+			if (breaks)
+			{
+				// this particle's own breakup moment, somewhere in the window
+				remain = brk + spread * lhrandom(-0.5f, 0.5f) - age;
+				if (remain <= 0.0f)
+					continue;
+			}
+			VectorLerp(n0, f, nozzle, n);
+			VectorLerp(a0, f, aim, a);
+			VectorNormalize(a);
+			VectorScale(a, speed, v);
+			VectorMA(v, 0.4f, cl.velocity, v);
+			VectorMA(n, age, v, pos);
+			VectorMA(pos, 0.5f * age * age, grav, pos);
+			VectorMA(v, age, grav, vnow);
+			VectorMA(pos, -ft, vnow, pos);
+			part = M5_FlamerHose_Spawn(info, pos, vnow, 0.0f);
+			if (!part)
+				continue;
+			if (breaks)
+			{
+				// gone at its breakup, dimming towards it so the hose frays
+				// rather than stopping at a line; still a third lit at the end
+				if (part->die > cl.time + remain)
+					part->die = cl.time + remain;
+				part->alphafade = max(part->alphafade, part->alpha / (remain * 1.5f));
+			}
+			if (thit[k] >= 0.0f && part->die > cl.time + (thit[k] - age))
+				part->die = cl.time + (thit[k] - age);	// dies where the arc meets the wall
+			M5_FlamerHose_LayerDelay(info, part);
+		}
+	}
+	// THE DROPLETS: one at a random instant of the frame's window, like a hose
+	// particle, but PLACED where it will be at its breakup time (the hose's own
+	// arc, so it begins exactly where the hose frays out, in a sweep too) and
+	// held unseen until then. Every layer of m5flame_drops lays its particles
+	// round the same point with the same velocity, so a droplet is one blob: a
+	// head, a streak along the flow and a tail that drags behind as it flies.
+	// No step-back by ft here: a held particle is not moved until it appears,
+	// and the droplet's own parts share whatever step that first frame takes.
+	if (brk > 0.0f && m5_drops_fx > 0 && m5_flamer_drops.value > 0.0f)
+	{
+		m5_drops_acc = bound(0.0f, m5_drops_acc + dt * m5_flamer_drops.value, 64.0f);
+		for (; m5_drops_acc >= 1.0f; m5_drops_acc -= 1.0f)
+		{
+			vec3_t n, a, v, pos, vbrk;
+			float f = lhrandom(0, 1);
+			float age = dt * (1.0f - f);
+			// across the same window, weighted later: the droplets thicken as
+			// the hose thins, and keep coming a little past its last particle
+			float tb = max(brk + spread * lhrandom(-0.35f, 0.75f), age + 0.01f);
+			k = min((int)(f * steps), steps - 1);
+			if (thit[k] >= 0.0f && thit[k] <= tb)
+				continue;				// the stream met the wall before it broke up
+			if (tb >= life)
+				continue;
+			VectorLerp(n0, f, nozzle, n);
+			VectorLerp(a0, f, aim, a);
+			VectorNormalize(a);
+			VectorScale(a, speed, v);
+			VectorMA(v, 0.4f, cl.velocity, v);
+			VectorMA(n, tb, v, pos);
+			VectorMA(pos, 0.5f * tb * tb, grav, pos);
+			VectorMA(v, tb, grav, vbrk);
+			for (ei = 0, info = particleeffectinfo; ei < MAX_PARTICLEEFFECTINFO && info->effectnameindex; ei++, info++)
+			{
+				int c, num;
+				if (!M5_FlamerHose_LayerLive(info, m5_drops_fx, underwater))
+					continue;
+				// cl_particles_quality thickens each droplet rather than adding droplets
+				num = (int)(info->countabsolute * max(cl_particles_quality.value, 0.25f) + lhrandom(0, 1));
+				for (c = 0; c < num; c++)
+				{
+					particle_t *part = M5_FlamerHose_Spawn(info, pos, vbrk, tb - age);
+					if (!part)
+						break;
+					if (thit[k] >= 0.0f && part->die > cl.time + (thit[k] - age))
+						part->die = cl.time + (thit[k] - age);
+					M5_FlamerHose_LayerDelay(info, part);
+				}
+			}
+			if (!m5_drops_reported)
+			{
+				m5_drops_reported = true;
+				Con_DPrintf("M5 flamer: hose breaks into droplets\n");	// first-event; asserted by tests/smoke.sh
+			}
+		}
+	}
+	VectorCopy(nozzle, m5_hose_nozzle);
+	VectorCopy(aim, m5_hose_aim);
+	m5_hose_live = true;
+	if (!m5_hose_reported)
+	{
+		m5_hose_reported = true;
+		Con_DPrintf("M5 flamer: hose\n");	// first-event; asserted by tests/smoke.sh
+	}
+}
+
 void M5_MuzzleFlash_Update(void)
 {
 	vec3_t org;
 	float size, age, k;
 	int c1, c2;
+	M5_FlamerHose_Update();
 	M5_MuzzleSparks_Update();
 	if (!m5_flash_weapon)
 		return;
@@ -1174,6 +1540,10 @@ void CL_Particles_Init (void)
 	Cvar_RegisterVariable (&m5_dust_alpha);
 	Cvar_RegisterVariable (&m5_dust_speed);
 	Cvar_RegisterVariable (&m5_muzzleflash);
+	Cvar_RegisterVariable (&m5_flamer_hose);
+	Cvar_RegisterVariable (&m5_flamer_break);
+	Cvar_RegisterVariable (&m5_flamer_break_spread);
+	Cvar_RegisterVariable (&m5_flamer_drops);
 	Cvar_RegisterVariable (&m5_muzzleflash_forward);
 	Cvar_RegisterVariable (&m5_muzzleflash_up);
 	Cvar_RegisterVariable (&m5_muzzleflash_size);

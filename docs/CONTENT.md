@@ -202,6 +202,25 @@ sha256 `f075be7a…c51a9682`; one skin, 172 frames.
 - Inside the `rogue` gamedir itself the m5 progs are replaced by the pack's own, so the
   ball weapon does not exist there and the pack's own copy is what its plasma gun uses.
 
+## Weapon model — the flamethrower (`m5/progs/v_flamer.mdl`), ORIGINAL
+
+Made 2026-10-03 for the flamethrower (`qc/m5flame.qc`, FLAMETHROWER.md) on Seb's word —
+*"go with option 3, make an original one"* — by `qc/make_v_flamer.py`, a script in this
+tree that writes the `.mdl` from nothing: geometry built from tubes and domes (one dark red fuel
+canister on the right, a vented heat shroud with raised lips, a scorched nozzle, a fullbright
+pilot flame, a ribbed hose) and a 256×256 skin painted procedurally, soot and oil streaks in it, and quantised to the Quake palette. **No third-party
+asset is in it**, so it ships in the public download.
+
+- **What it reads at build time, and does not copy**: the Quake palette (`gfx/palette.lmp`)
+  from the player's own `id1` pak — the skin is palette indices — and the 162 vertex normals
+  from this tree's `mathlib.c`. The generated `.mdl` is never committed (the public source
+  snapshot refuses any `.mdl`); `qc/build.sh` and `release/make-release.sh` both build it.
+- **Licence**: the fork's own (GPL, with the engine). Reproducible: the skin's noise is
+  seeded, so the same palette gives the same file.
+- **Where it is referenced**: `qc/world.qc` precaches it unconditionally, `W_SetCurrentAmmo`
+  names it for `IT_M5FLAME`. Five frames named as the thunderbolt's (`shot1`..`shot5`):
+  rest, and a four-frame firing loop with a recoil shudder and the pilot flame flaring.
+
 ## Removing it all
 
 Delete `m5/progs/` (which also removes the borrowed `v_plasma.mdl`), `m5/maps/` and `m5/QRP_map_textures_v.1.00.pk3`. Nothing else is touched;

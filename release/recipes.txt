@@ -27,6 +27,12 @@ asskip.cfg
 asskip_off.cfg
 ball_off.cfg
 ball_v1.cfg
+flamer_hoseonly.cfg
+flamer_hybrid.cfg
+flamer_off.cfg
+flamer_on.cfg
+flamer_sfx_off.cfg
+flamer_sfx_on.cfg
 ball_v2.cfg
 bloom_m5_off.cfg
 bloom_m5_on.cfg

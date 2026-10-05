@@ -259,6 +259,40 @@ void() player_light2   =[$light2, player_light1  ]
 	self.attack_finished = time + 0.2;
 };
 
+// M5 flamethrower (m5flame.qc): the thunderbolt's loop, firing napalm. The
+// tick rides attack_finished like the bolt's, so W_WeaponFrame cannot fire a
+// second stream on top; letting go returns to the run.
+void() W_FireFlame;
+void() player_flame2;
+void() player_flame1   =[$light1, player_flame2  ]
+{
+	if (!self.button0 || self.weapon != IT_M5FLAME)
+	{
+		player_run ();
+		return;
+	}
+	self.weaponframe = self.weaponframe + 1;
+	if (self.weaponframe >= 5)
+		self.weaponframe = 1;
+	SuperDamageSound();
+	W_FireFlame();
+	self.attack_finished = time + 0.2;
+};
+void() player_flame2   =[$light2, player_flame1  ]
+{
+	if (!self.button0 || self.weapon != IT_M5FLAME)
+	{
+		player_run ();
+		return;
+	}
+	self.weaponframe = self.weaponframe + 1;
+	if (self.weaponframe >= 5)
+		self.weaponframe = 1;
+	SuperDamageSound();
+	W_FireFlame();
+	self.attack_finished = time + 0.2;
+};
+
 //============================================================================
 
 

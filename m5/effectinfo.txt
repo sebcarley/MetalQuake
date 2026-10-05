@@ -801,3 +801,418 @@ velocityjitter 130 130 130
 velocitymultiplier 0.05
 gravity 0.2
 airfriction 1.5
+
+// ===========================================================================
+// M5 FLAMETHROWER (qc/m5flame.qc, FLAMETHROWER.md, 2026-10-03). Seb: "a
+// completely fresh napalm stream of fiery white yellow death". Four names:
+// the stream trail, the impact splash, a fire patch's licks and the steam.
+// None carries a light: the stream has ONE light of its own and each patch is
+// EF_FLAME's, and thirty splash flashes a second would flood the RT light list.
+// ===========================================================================
+
+// m5flame_stream L1 -- the WHITE-HOT CORE each globule lays along its flight
+// (.traileffectnum). Small, bright, gone in a quarter second, so the arc reads
+// as one continuous ribbon of white-yellow fire. (Spacings widened 5/3 on
+// 2026-10-04 when the stream went from 3 globules a tick to 5; at 100 a
+// second that evening they sit at ~1.5x the 50-a-second spacing -- doubling
+// them kept the particle count but left a WHIPPED stream sparse, because in a
+// fast sweep the globules fan apart and density along each path is what reads.)
+effect m5flame_stream
+notunderwater
+type static
+blend add
+trailspacing 20
+tex 63 63
+size 1.5 2.5
+sizeincrease 30
+alpha 200 255 1200
+color 0xFFFFF4 0xFFF2A0
+velocityjitter 18 18 18
+airfriction 3
+gravity -0.15
+
+// L2 -- the BODY: yellow-to-orange puffs that carry the stream's motion and
+// boil a little. Seb's second look (2026-10-04, demoflame): "still a tad
+// globby when strafing" -- the first cut's puffs grew to twenty units and,
+// once a sweep pulled them apart, read as separate balls. Smaller, fainter
+// and more tied to the flow now; the jet's continuity comes from L2b.
+effect m5flame_stream
+notunderwater
+type static
+trailspacing 34
+tex 0 8
+size 1.5 2.5
+sizeincrease 26
+alpha 60 95 240
+color 0xFFE070 0xFF7A18
+velocityjitter 14 14 14
+velocitymultiplier 0.3
+airfriction 2.5
+gravity -0.3
+rotate 0 360 -120 120
+
+// L2b -- the JET: streaks stretched along the direction of flow (type spark
+// draws along the particle's own velocity, which here is mostly the
+// globule's), so the stream reads as flowing fire rather than a string of
+// balls, and a sweep draws a smear rather than lumps.
+effect m5flame_stream
+notunderwater
+type spark
+trailspacing 16
+tex 38 38
+size 1.6 2.6
+alpha 150 210 900
+color 0xFFF6C0 0xFFA830
+velocityjitter 10 10 10
+velocitymultiplier 0.55
+airfriction 1.5
+gravity -0.1
+
+// L3 -- a thin dark SMOKE that rises off the stream a beat behind the fire.
+effect m5flame_stream
+notunderwater
+type smoke
+blend alpha
+trailspacing 150
+tex 0 8
+size 10 16
+sizeincrease 26
+alpha 40 70 46
+color 0x3A2C22 0x5A4A3E
+velocityjitter 14 14 14
+airfriction 1
+gravity -0.12
+rotate 0 360 -60 60
+delay 0.15 0.3
+
+// THE HOSE (2026-10-04): the whole stream, drawn by the client from the gun's
+// own nozzle every rendered frame along the aim of each moment (cl_particles.c,
+// m5_flamer_hose). `count` is per SECOND (the emitter passes the frame's time);
+// every particle flies the full arc, so its life is its alpha over its fade and
+// it dies early only where the stream meets a wall (the emitter clamps it).
+// The server's globules carry the damage and the fire and are invisible unless
+// m5_flamer_servertrail puts their m5flame_stream trail back.
+effect m5flame_hose
+notunderwater
+type static
+blend add
+count 700
+tex 63 63
+size 1.5 2.5
+sizeincrease 12
+alpha 220 255 240
+color 0xFFFFF4 0xFFF2A0
+velocityjitter 16 16 16
+velocitymultiplier 1
+airfriction 0.45
+gravity 0.5
+
+effect m5flame_hose
+notunderwater
+type static
+count 450
+tex 0 8
+size 1.8 2.8
+sizeincrease 24
+alpha 90 130 120
+color 0xFFE070 0xFF7A18
+velocityjitter 24 24 24
+velocitymultiplier 0.94
+airfriction 0.9
+gravity 0.35
+rotate 0 360 -120 120
+
+effect m5flame_hose
+notunderwater
+type spark
+count 70
+tex 38 38
+size 1.4 2.2
+alpha 160 220 900
+color 0xFFF6C0 0xFFA830
+velocityjitter 6 6 6
+velocitymultiplier 1.02
+airfriction 0.4
+gravity 0.5
+
+effect m5flame_hose
+notunderwater
+type smoke
+blend alpha
+count 30
+tex 0 8
+size 10 16
+sizeincrease 26
+alpha 40 70 40
+color 0x3A2C22 0x5A4A3E
+velocityjitter 14 14 14
+velocitymultiplier 0.6
+airfriction 1
+gravity -0.12
+rotate 0 360 -60 60
+delay 0.25 0.45
+
+// THE DROPLETS (2026-10-05, m5_flamer_break): past its breakup the hose is
+// these. The emitter in cl_particles.c places one droplet at a time where the
+// hose's own arc would be at that moment and holds it unseen until then, and
+// every layer below lays its `countabsolute` particles round that one point at
+// that one velocity (x cl_particles_quality), so each droplet is one blob. The
+// head flies the arc (gravity 0.5 = m5_flamer_gravity); the tail layers carry
+// more air friction, fall behind it and rise a little, so a droplet draws its
+// own comet tail of fire as it goes -- the first two versions' look, kept for
+// the far stretch where the stream should be coming apart.
+
+// D1 -- the HEAD: a hot white-yellow core, a touch bigger than the hose's.
+effect m5flame_drops
+notunderwater
+type static
+blend add
+countabsolute 3
+tex 63 63
+size 4 5.5
+sizeincrease 7
+alpha 240 255 300
+color 0xFFFFF0 0xFFE890
+originjitter 2 2 2
+velocityjitter 7 7 7
+velocitymultiplier 1
+airfriction 0.25
+gravity 0.5
+
+// D2 -- the STREAK: drawn along its own velocity, so the droplet reads as
+// moving fire rather than a dot.
+effect m5flame_drops
+notunderwater
+type spark
+countabsolute 2
+tex 38 38
+size 3 4
+alpha 200 240 420
+color 0xFFF4C0 0xFFB040
+velocityjitter 4 4 4
+velocitymultiplier 1
+airfriction 0.25
+gravity 0.5
+
+// D3 -- the BODY: yellow-orange puffs round the head that swell as it flies.
+effect m5flame_drops
+notunderwater
+type static
+countabsolute 3
+tex 0 8
+size 4 6
+sizeincrease 24
+alpha 140 190 200
+color 0xFFD860 0xFF7018
+originjitter 3 3 3
+velocityjitter 14 14 14
+velocitymultiplier 0.95
+airfriction 0.9
+gravity 0.4
+rotate 0 360 -120 120
+
+// D4 -- the TAIL: slower to begin with and dragged harder by the air, so it
+// strings out behind the head; it rises as it cools, orange to dull red.
+effect m5flame_drops
+notunderwater
+type static
+blend add
+countabsolute 4
+tex 0 8
+size 3 4.5
+sizeincrease 16
+alpha 150 200 260
+color 0xFFA840 0xD83A10
+originjitter 2 2 2
+velocityjitter 10 10 10
+velocitymultiplier 0.8
+airfriction 2.6
+gravity -0.1
+rotate 0 360 -90 90
+
+effect m5flame_splash
+notunderwater
+type spark
+countabsolute 6
+tex 39 39
+size 1 1.6
+alpha 220 255 900
+color 0xFFF0A0 0xFF9020
+velocityjitter 90 90 90
+velocitymultiplier 1
+gravity 0.6
+airfriction 1
+
+effect m5flame_splash
+notunderwater
+type static
+countabsolute 2
+tex 0 8
+size 10 16
+sizeincrease 80
+alpha 200 255 900
+color 0xFFFFE0 0xFFC040
+originjitter 4 4 4
+velocityjitter 30 30 30
+gravity -0.4
+
+// m5flame_patch -- fired ten times a second on every burning patch: a white-hot
+// core low on the surface, yellow-orange licks rising off it, and embers.
+// Seb's first look (2026-10-03): "the floor fires ... could be brighter and
+// glow more" -- so the core is new and the licks are bigger and denser.
+effect m5flame_patch
+notunderwater
+type static
+countabsolute 2
+tex 63 63
+size 3 6
+sizeincrease 20
+alpha 220 255 900
+color 0xFFFFF0 0xFFE890
+originjitter 9 9 2
+velocityoffset 0 0 40
+velocityjitter 8 8 14
+airfriction 2
+gravity -0.3
+
+effect m5flame_patch
+notunderwater
+type static
+countabsolute 3
+tex 0 8
+size 6 11
+sizeincrease 30
+alpha 190 255 400
+color 0xFFFFC0 0xFFA020
+originjitter 11 11 3
+velocityoffset 0 0 52
+velocityjitter 10 10 20
+airfriction 1.5
+gravity -0.35
+rotate 0 360 -90 90
+
+effect m5flame_patch
+notunderwater
+type static
+countabsolute 1
+tex 0 8
+size 9 14
+sizeincrease 22
+alpha 70 110 140
+color 0xFF8020 0xC03808
+originjitter 12 12 3
+velocityoffset 0 0 30
+velocityjitter 8 8 10
+airfriction 1.2
+gravity -0.2
+rotate 0 360 -60 60
+
+effect m5flame_patch
+notunderwater
+type spark
+count 0.4
+tex 39 39
+size 0.8 1.4
+alpha 200 255 700
+color 0xFFE080 0xFF8020
+originjitter 10 10 2
+velocityoffset 0 0 90
+velocityjitter 30 30 40
+gravity -0.2
+
+// m5flame_steam -- napalm meeting water, or a flamethrower fired submerged.
+effect m5flame_steam
+type smoke
+blend alpha
+countabsolute 5
+tex 0 8
+size 6 10
+sizeincrease 30
+alpha 80 120 120
+color 0xC8C8C8 0xF0F0F0
+originjitter 4 4 4
+velocityjitter 20 20 20
+velocitymultiplier 1
+airfriction 2
+gravity -0.2
+
+// ===========================================================================
+// EF_FLAME -- the BURN: anything set alight by the bolt (m5_burn), the ball or
+// the flamethrower wears this effects bit, and the client calls this effect
+// every frame as an EMITTER (count is per second, times cl_particles_quality)
+// and once more per frame for its light. Naming it replaces the engine's
+// hardcoded version outright (the all-or-nothing rule): 300 small fast orange
+// sparks a second and a 200-radius light with a CORONA. Seb's first look at
+// the flamethrower (2026-10-03): "monster fires could be brighter and glow
+// more" -- so flames that wrap the body, a white-hot core, smoke and embers,
+// and a brighter, wider light with NO corona (a radius-sized blob under
+// r_coronas; lightcorona reads INTEGERS, so there is no small corona to ask
+// for). The burning thing's origin is its centre, so the jitter is its body.
+// ===========================================================================
+effect EF_FLAME
+notunderwater
+lightradius 240
+lightcolor 2.6 1.6 0.55
+lightcorona 0 0
+
+effect EF_FLAME
+notunderwater
+type static
+count 50
+tex 0 8
+size 5 9
+sizeincrease 24
+alpha 110 170 380
+color 0xFFF0A0 0xFF7020
+originjitter 11 11 26
+velocityoffset 0 0 70
+velocityjitter 12 12 20
+airfriction 1.5
+gravity -0.4
+rotate 0 360 -90 90
+
+effect EF_FLAME
+notunderwater
+type static
+count 25
+tex 63 63
+size 2.5 4
+sizeincrease 12
+alpha 170 230 900
+color 0xFFFFF0 0xFFE080
+originjitter 10 10 18
+velocityoffset 0 0 60
+velocityjitter 8 8 16
+airfriction 2
+gravity -0.3
+
+effect EF_FLAME
+notunderwater
+type smoke
+blend alpha
+count 10
+tex 0 8
+size 8 14
+sizeincrease 24
+alpha 40 70 50
+color 0x3A2C22 0x5A4A3E
+originoffset 0 0 20
+originjitter 10 10 10
+velocityoffset 0 0 30
+velocityjitter 10 10 10
+airfriction 1
+gravity -0.15
+rotate 0 360 -60 60
+
+effect EF_FLAME
+notunderwater
+type spark
+count 6
+tex 39 39
+size 0.8 1.3
+alpha 200 255 800
+color 0xFFE080 0xFF8020
+originjitter 12 12 20
+velocityoffset 0 0 80
+velocityjitter 40 40 40
+gravity -0.2

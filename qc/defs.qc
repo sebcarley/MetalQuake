@@ -785,6 +785,23 @@ void(entity e, float chan, string samp, float vol, float atten, float speed, flo
 .vector punchvector;
 .float m5_balltint;		// player: the violet cast last stuffed (M5Ball_Pressure), 0 = none
 
+// M5 FLAMETHROWER (m5_flamer): the tenth weapon, qc/m5flame.qc (FLAMETHROWER.md).
+// IT_M5FLAME is item bit 23. The id1 HUD draws nothing for it; in Armagon it
+// is the laser cannon's bit, but a mission pack's own progs.dat replaces this
+// one wholesale (the gamedir search order), so the two never meet -- the same
+// argument that frees bit 7 for the ball. 2^23 is the last bit a float holds
+// exactly beside the low ones, so it combines with every weapon bit safely.
+float	IT_M5FLAME				= 8388608;
+.float glow_trail;		// DarkPlaces: sends an entity with no model (RENDER_GLOWTRAIL); the napalm globules ride it so their trail is drawn
+.float gravity;			// DarkPlaces: per-entity gravity scale for MOVETYPE_TOSS (0 = 1); the napalm's arc
+.float m5_flameend;		// flamer: a globule's, a patch's or the stream light's end time
+.float m5_flamestart;	// flamer: when a fire patch was lit (the cap evicts the oldest)
+.float m5_flamehurt;	// flamer: next time a fire patch may scorch this thing again
+.entity m5_flamelight;	// player: the stream's one light (riding down the aim line), or world
+.float m5_flamefuel;	// player: fuel owed below one cell (m5_flamer_cost 0.75 spends three cells in four ticks)
+.float m5_flamelast;	// flamer nozzle: the server time it last emitted
+.float m5_flameacc;		// flamer nozzle: fractional globules carried to the next frame
+
 // M5 VENOM (m5_venom): the Scrag's spit carries its own acid light
 // PFLAGS_FULLDYNAMIC is DarkPlaces' per-entity real light: arbitrary RGB from
 // .color, radius from .light_lev, and -- unlike the older .glow_size path --

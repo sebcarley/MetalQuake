@@ -31,6 +31,10 @@ void(entity nail) M5Feel_NailTracer;
 void(vector org, vector nrm) M5Feel_AxeSparks;
 void() M5Ball_Sync;
 void() M5Ball_Select;
+// M5 flamethrower (m5flame.qc, compiled after this file; FLAMETHROWER.md)
+void() M5Flame_Sync;
+void() M5Flame_Select;
+void() player_flame1;	// player.qc: the thunderbolt's two-frame loop, firing W_FireFlame
 
 
 // called by worldspawn
@@ -997,6 +1001,16 @@ void() W_SetCurrentAmmo =
 		self.weaponframe = 0;
 		self.items = self.items | IT_CELLS;
 	}
+	else if (self.weapon == IT_M5FLAME)
+	{
+		// M5 flamethrower: the thunderbolt's cells, and its own model --
+		// original, built by qc/make_v_flamer.py (qc/build.sh runs it), so it
+		// ships in the public download
+		self.currentammo = self.ammo_cells;
+		self.weaponmodel = "progs/v_flamer.mdl";
+		self.weaponframe = 0;
+		self.items = self.items | IT_CELLS;
+	}
 	else
 	{
 		self.currentammo = 0;
@@ -1134,6 +1148,13 @@ void() W_Attack =
 			r = 0.2;
 		self.attack_finished = time + r;
 	}
+	else if (self.weapon == IT_M5FLAME)
+	{
+		// M5 flamethrower: the thunderbolt's held loop, a tick every tenth
+		// of a second until the trigger is let go
+		player_flame1();
+		self.attack_finished = time + 0.1;
+	}
 };
 
 /*
@@ -1269,17 +1290,35 @@ void() CycleWeaponCommand =
 
 		if (self.weapon == IT_LIGHTNING)
 		{
-			// M5: the ball gun sits past the thunderbolt when it is granted
+			// M5: the ball gun, then the flamethrower, sit past the thunderbolt
+			// when they are granted
 			if (it & IT_M5BALL)
 			{
 				self.weapon = IT_M5BALL;
 				if (self.ammo_cells < cvar("m5_balllightning_cost"))
 					am = 1;
 			}
+			else if (it & IT_M5FLAME)
+			{
+				self.weapon = IT_M5FLAME;
+				if (self.ammo_cells < 1)
+					am = 1;
+			}
 			else
 				self.weapon = IT_AXE;
 		}
 		else if (self.weapon == IT_M5BALL)
+		{
+			if (it & IT_M5FLAME)
+			{
+				self.weapon = IT_M5FLAME;
+				if (self.ammo_cells < 1)
+					am = 1;
+			}
+			else
+				self.weapon = IT_AXE;
+		}
+		else if (self.weapon == IT_M5FLAME)
 		{
 			self.weapon = IT_AXE;
 		}
@@ -1394,7 +1433,29 @@ void() CycleWeaponReverseCommand =
 		}
 		else if (self.weapon == IT_AXE)
 		{
-			// M5: the ball gun sits past the thunderbolt when it is granted
+			// M5: backwards from the axe, the flamethrower, the ball gun, then
+			// the thunderbolt -- each only when granted
+			if (it & IT_M5FLAME)
+			{
+				self.weapon = IT_M5FLAME;
+				if (self.ammo_cells < 1)
+					am = 1;
+			}
+			else if (it & IT_M5BALL)
+			{
+				self.weapon = IT_M5BALL;
+				if (self.ammo_cells < cvar("m5_balllightning_cost"))
+					am = 1;
+			}
+			else
+			{
+				self.weapon = IT_LIGHTNING;
+				if (self.ammo_cells < 1)
+					am = 1;
+			}
+		}
+		else if (self.weapon == IT_M5FLAME)
+		{
 			if (it & IT_M5BALL)
 			{
 				self.weapon = IT_M5BALL;
@@ -1461,6 +1522,7 @@ on sv_cheats like any other cheat.
 
  200  cycle gore preset          201  toggle Doom shotgun
  202  select ball lightning (the ninth weapon; press again for the bolt)
+ 203  select the flamethrower (the tenth; press again for the bolt)
  210  horde: summon next wave    211  horde: status report
  222  pentagram (30s, cheat)     223  quad damage (30s, cheat)
  224  ring of shadows (30s, cheat)
@@ -1495,6 +1557,8 @@ void() M5ImpulseCommands =
 	}
 	if (self.impulse == 202)
 		M5Ball_Select ();
+	if (self.impulse == 203)
+		M5Flame_Select ();
 	if (self.impulse == 210)
 		M5Horde_NextWave ();
 	if (self.impulse == 211)
@@ -1559,6 +1623,7 @@ void() W_WeaponFrame =
 		return;
 
 	M5Ball_Sync ();		// grant or withdraw the ball gun with m5_balllightning
+	M5Flame_Sync ();	// and the flamethrower with m5_flamer
 	ImpulseCommands ();
 
 	// check for attack

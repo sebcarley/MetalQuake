@@ -3354,7 +3354,7 @@ static void M_Options_RTShadows_Key (cmd_state_t *cmd, int k, int ascii)
 // greyed on.  The engine-side halves (muzzle flash, shells, air physics,
 // bullet time, photo mode) work in every game.
 
-#define OPTIONS_M5MODS_ITEMS 16
+#define OPTIONS_M5MODS_ITEMS 17
 
 static int options_m5mods_cursor;
 
@@ -3378,6 +3378,7 @@ extern cvar_t m5_venom;
 extern cvar_t m5_horde;
 extern cvar_t m5_horde_director;
 extern cvar_t m5_balllightning;
+extern cvar_t m5_flamer;
 extern cvar_t m5_kick;
 extern cvar_t m5_grenadebounce;
 extern cvar_t m5_nailtracer;
@@ -3411,6 +3412,7 @@ static void M_Menu_Options_M5Mods_AdjustSliders (cmd_state_t *cmd, int dir)
 	// switchable here so the lot can go back to stock). The kick slider steps in
 	// quarters so 1 (the designed kick) is a stop rather than a slide-past.
 	else if (options_m5mods_cursor == optnum++) Cvar_SetValueQuick (&m5_balllightning, !m5_balllightning.integer);
+	else if (options_m5mods_cursor == optnum++) Cvar_SetValueQuick (&m5_flamer, !m5_flamer.integer);
 	else if (options_m5mods_cursor == optnum++) Cvar_SetValueQuick (&m5_kick, bound(0, m5_kick.value + dir * 0.25, 2));
 	else if (options_m5mods_cursor == optnum++) Cvar_SetValueQuick (&m5_grenadebounce, !m5_grenadebounce.integer);
 	else if (options_m5mods_cursor == optnum++) Cvar_SetValueQuick (&m5_nailtracer, !m5_nailtracer.integer);
@@ -3448,6 +3450,7 @@ static void M_Options_M5Mods_Draw (void)
 		M_Options_PrintCheckbox("        Horde Director", qc && m5_horde.integer, m5_horde_director.integer);
 		M_Options_PrintCheckbox("            Photo Mode", true, m5_photomode.integer);
 		M_Options_PrintCheckbox("        Ball Lightning", qc, m5_balllightning.integer);
+		M_Options_PrintCheckbox("          Flamethrower", qc, m5_flamer.integer);
 		M_Options_PrintSlider(  "           Weapon Kick", qc, m5_kick.value, 0, 2);
 		M_Options_PrintCheckbox("       Grenade Bounces", qc, m5_grenadebounce.integer);
 		M_Options_PrintCheckbox("          Nail Tracers", qc, m5_nailtracer.integer);

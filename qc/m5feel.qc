@@ -94,6 +94,7 @@ void(float wep, float stockpitch) M5Feel_Kick =
 	else if (wep == IT_ROCKET_LAUNCHER) { pitch = 7; back = 8; }
 	else if (wep == IT_LIGHTNING)   { pitch = 0.8 + random() * 0.7; back = 1.2; }
 	else if (wep == IT_M5BALL)      { pitch = 5;    back = 6;   }
+	else if (wep == IT_M5FLAME)     { pitch = 0.4 + random() * 0.4; back = 0.8; }
 	else                            { pitch = 2;    back = 0;   }
 
 	// the harder of the stock pitch and the table (stockpitch is negative)

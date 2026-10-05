@@ -30,7 +30,7 @@ trap 'rm -rf "$TMP"' EXIT
 git archive HEAD | tar -x -C "$TMP"
 
 # --- the private working log stays private ---------------------------------------
-for f in CLAUDE.md BALLLIGHTNING.md BEAUTY.md BEAUTYBENCH.md BLUENOISE.md FOGLIGHT.md \
+for f in CLAUDE.md BALLLIGHTNING.md BEAUTY.md BEAUTYBENCH.md BLUENOISE.md FLAMETHROWER.md FOGLIGHT.md \
          GIARC.md LIQUIDFOG.md PERFPLAN.md ROADMAP.md RELEASE.md REVIEW.md SEPTEMBER.md \
          SEPTEMBER2.md SMAA.md VKRT.md WARCHEST.md WATERSURFACE.md impulse_mapping.txt \
          metal/async-plan.md release/public-repo \

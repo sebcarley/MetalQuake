@@ -172,6 +172,18 @@ static int gStatus = -1;          // its exit status (0 == all passed)
 - (void)testBallKnotDraws         { [self assertCheck:@"M5 ball: the plasma knot draws"]; }
 - (void)testBallMasterGateRefuses { [self assertCheck:@"M5 ball: master gate refuses impulse 202"]; }
 - (void)testBallMasterGateSilent  { [self assertCheck:@"M5 ball: master gate spawns nothing"]; }
+// The flamethrower, the tenth weapon (run H4, FLAMETHROWER.md, 2026-10-03).
+- (void)testFlamerEffectsResolve  { [self assertCheck:@"M5 flamer: effects resolve"]; }
+- (void)testFlamerStream          { [self assertCheck:@"M5 flamer: the stream fires"]; }
+- (void)testFlamerHose            { [self assertCheck:@"M5 flamer: the hose draws"]; }
+- (void)testFlamerHoseDroplets    { [self assertCheck:@"M5 flamer: the hose breaks into droplets"]; }
+- (void)testFlamerIgnites         { [self assertCheck:@"M5 flamer: napalm sets a target alight"]; }
+- (void)testFlamerPatches         { [self assertCheck:@"M5 flamer: fire patches light"]; }
+- (void)testFlamerRefuel          { [self assertCheck:@"M5 flamer: a patch is refuelled"]; }
+- (void)testFlamerPatchCap        { [self assertCheck:@"M5 flamer: the patch cap holds"]; }
+- (void)testFlamerKeyZeroBound    { [self assertCheck:@"M5 flamer: key 0 is bound to it"]; }
+- (void)testFlamerMasterGateRefuses { [self assertCheck:@"M5 flamer: master gate refuses impulse 203"]; }
+- (void)testFlamerMasterGateSilent  { [self assertCheck:@"M5 flamer: master gate spawns nothing"]; }
 // Weapon feel (run G, SEPTEMBER2 Part G, 2026-09-10): kick, grenade bounces,
 // nail tracers, axe sparks -- each a first-event line, plus the all-off control.
 - (void)testFeelKick              { [self assertCheck:@"M5 feel: weapon kick fires"]; }

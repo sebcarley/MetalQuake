@@ -290,6 +290,8 @@ static void Host_AddConfigText(cmd_state_t *cmd)
 	// any earlier; and only if 9 is still unbound, so a player's own bind of it
 	// in config.cfg wins. Harmless to run again on a gamedir change.
 	Cbuf_AddText(cmd, "m5_bindifunbound 9 \"impulse 202\"\n");
+	// and the flamethrower, the tenth, on key 0 (FLAMETHROWER.md) -- the same rule
+	Cbuf_AddText(cmd, "m5_bindifunbound 0 \"impulse 203\"\n");
 
 	// M5: the per-pack look file, APPENDED so it runs after everything the
 	// quake.rc chain above queues -- including config.cfg, which is now shared

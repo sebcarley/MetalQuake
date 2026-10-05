@@ -401,7 +401,11 @@ mods</strong> beside them.</p>
 
 <p>Everything answers to a console variable, and every variable is documented in
 <code>SETTINGS.md</code>. The menus carry the ones worth reaching for; this guide is the
-tour of what they do, why, and where in the game to go and stand to see them.</p>
+tour of what they do, why, and where in the game to go and stand to see them. Some
+variables are experiments that lost — measured worse, overtaken, or sent back by your eye —
+and are kept, off, so nobody builds them twice: their console help opens with
+<em>KEPT FOR COMPARISON</em>, and <code>SETTINGS.md</code> lists all thirteen with the
+verdict on each.</p>
 
 <section class="rt" id="rt">
   <span class="kicker">I &middot; Light</span>
@@ -1242,13 +1246,74 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     <code>m5/effectinfo.txt</code>, tunable live with <code>cl_particles_reloadeffects</code>.</dd>
   </dl>
 
+  <h3>The flamethrower</h3>
+
+  <dl>
+    <dt>m5_flamer</dt>
+    <dd>On by default: a tenth weapon, on key 0, with a
+    <strong>Flamethrower</strong> row on the M5 Fun Mods page. Own the thunderbolt and you
+    also own a napalm thrower. Key 0 selects it (<code>impulse 203</code>; press again for the
+    bolt) — the engine binds the key for you unless your config has already given 0 to
+    something else — and it spends the bolt's cells, seven and a half a second while the
+    trigger is held (three-quarters of the bolt's rate). <code>exec flamer_off.cfg</code> removes it;
+    <code>flamer_on.cfg</code> brings it back and binds the key.
+    <br><strong>The stream.</strong> Hold the trigger and the gun pours a stream of burning
+    napalm along an arc that droops under gravity — half a grenade's fall — and reaches
+    five or six hundred units before it burns out in the air. What you see is drawn on your
+    own screen, from the gun's nozzle, every frame: a hose of particles, each sent along the
+    aim of the instant it left, so a fast turn or a strafe lays one unbroken curve of fire
+    rather than a string of beads (<code>m5_flamer_hose</code>; the earlier look, the
+    server's globules trailing fire a frame behind the view, is <code>m5_flamer_servertrail
+    1</code>). The hose holds together only for its first stretch — about a fifth of a second
+    of flight, <code>m5_flamer_break</code> 0.22 — then frays and
+    breaks into droplets of fire for the rest of the way — <code>m5_flamer_drops</code> a
+    second, each a hot head with a streak and a short tail dragging behind it, continuing
+    exactly where the hose frayed out even in a fast turn; <code>m5_flamer_break_spread</code>
+    is how ragged the breakup is (0.22), and <code>exec flamer_hoseonly.cfg</code> puts the
+    unbroken hose back (<code>m5_flamer_break 0</code>). A white-hot core inside a yellow-to-orange body with a thin smoke rising off
+    it, and it stops where it meets a wall. The napalm itself — a hundred invisible globules a
+    second, released every frame from wherever you were aiming at that moment — is what
+    burns, ignites and leaves fire. The whole stream carries
+    ONE white-yellow light, riding down the aim line ahead of the gun, and a roar (the
+    torches' own fire, pitched up) that stops a moment after you let go. The trigger is an
+    ignition — the spark ticks twice, the gas catches with a low thump and the stream lights
+    with a whoosh, the roar coming in under its tail — and letting go is a wind-down: the
+    valve shuts, the flame gutters and sputters out and the last of the gas hisses away. <code>m5_flamer_sfx</code>
+    (1) scales both; <code>exec flamer_sfx_off.cfg</code> is the rocket's whoosh as before.
+    <br><strong>What it does.</strong> A globule that strikes anything living does one and
+    a half damage and sets it alight — the burn the Lightning Ignites row describes, whatever that
+    row says: napalm burns. A held stream on one target is about 150 a second before the
+    burn, half the bolt's. A globule that strikes a wall or a floor splashes embers and
+    leaves a <em>fire patch</em>: a white-hot core, licks of yellow flame and a bright
+    flickering orange glow on the surface around it, that burn for five seconds, scorch anything standing in them every half second and set
+    it alight. More napalm landing on a patch tops it up, to ten seconds at most, rather
+    than lighting a second beside it. At most ten patches burn at once; the oldest goes out
+    when another is wanted — each is a real light, and the ray tracer's list of them is
+    finite.
+    <br><strong>Water.</strong> Napalm that meets water dies in a puff of steam, no patch is
+    lit in a liquid, and fired from under the surface the gun only hisses (no cells spent).
+    Anything burning — from this, the bolt or the ball — that wades into water or slime is
+    put out.
+    <br><strong>It burns you too.</strong> Your own fire patches scorch and ignite you like
+    anything else. Hose the floor at your feet and you are standing in it.
+    <br>Every number is a <code>m5_flamer_*</code> console cvar — speed, gravity, globules a
+    tick, spread, life, damage, cost, how long a patch burns, how many may burn, a patch's
+    scorch, and the stream's and the patches' light. The gun is its own: a grimy, soot-streaked
+    barrel under a vented heat shroud, one dark oxblood fuel canister on the right, a scorched nozzle with a
+    small pilot flame burning beneath it, shuddering as it fires. The hose, the splash, a patch's flames and the steam are blocks in
+    <code>m5/effectinfo.txt</code> (<code>m5flame_*</code>; <code>m5flame_hose</code> is the
+    stream, its <code>count</code> lines per second), tunable live with
+    <code>cl_particles_reloadeffects</code>.</dd>
+  </dl>
+
   <div class="where">
     <span class="kicker">Where to look</span>
     <p>The skill hall of the start map, from the top of the stair: fire a ball down it and
     watch it drift over the pads, then chase it and learn why you should not. The start of
     e1m2, where a pack is waiting at once, to chain through. And a horde
     wave on dm4 (<code>m5_horde 1</code>, <code>impulse 210</code>) with a fresh ball every
-    refire.</p>
+    refire — and then key 0, the flamethrower swept across the same wave and the floor in
+    front of it.</p>
   </div>
 </section>
 
@@ -1336,7 +1401,11 @@ tour of what they do, why, and where in the game to go and stand to see them.</p
     <dd>The lightning gun sets things on fire — flame, smoke, burn damage, and the victim
     charring as it goes. The fire carries a real dynamic light, so a burning monster lights
     the fog and casts ray-traced shadows. A Shambler's bolt sets <em>you</em> alight too. The
-    ball lightning ignites regardless.</dd>
+    ball lightning and the flamethrower ignite regardless. The flames are tall and
+    white-hot at the core, wrap the whole body and throw a warm light around it; they are
+    the <code>EF_FLAME</code> block in <code>m5/effectinfo.txt</code>, tunable live with
+    <code>cl_particles_reloadeffects</code>. Anything burning that wades into water or slime
+    is put out.</dd>
 
     <dt>m5_venom</dt>
     <dd>The Scrag's spit reads as acid — <em>Alien</em> rather than fireworks. A yellow-green

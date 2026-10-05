@@ -18,6 +18,13 @@ GENERATED (the profile) or EXTERNAL (id1's own); every recipe a shipped recipe n
 "exec x_off.cfg to revert") ships too. Shorthand in the docs ("x_off.cfg / _on.cfg")
 resolves against the nearest full name before it, or fails. test/docsync.py runs the tree
 check, so smoke does; release/make-release.sh runs both.
+
+Tree mode also LINTS every shipped recipe (2026-10-03): each statement must begin with a
+cvar or command the engine registers (or an alias the recipe defines). Statements split
+the way the console splits them -- on newlines and on every ';' outside quotes, with '//'
+comments stripped outside quotes -- so an unquoted echo carrying a ';' is caught: its tail
+runs as a command (ball_v2.cfg ran "ball_v1.cfg is the first tuning)" and printed
+"Unknown command"). A cvar retired from the engine is caught the same way.
 """
 import io, os, re, subprocess, sys
 
@@ -74,6 +81,64 @@ def named_by_docs(docdir):
             out.setdefault(name, where)
     return out, errs
 
+def registered():
+    """Every cvar and command name the engine registers, read from the source."""
+    names = set()
+    for f in os.listdir(ROOT):
+        if not f.endswith(('.c', '.m')):
+            continue
+        s = io.open(os.path.join(ROOT, f), encoding='utf-8', errors='replace').read()
+        names |= set(re.findall(r'cvar_t\s+\w+\s*=\s*\{[^,]*,\s*"([^"]+)"', s))
+        names |= set(re.findall(r'Cvar_Get\s*\([^,]*,\s*"([^"]+)"', s))
+        names |= set(re.findall(r'Cmd_AddCommand\s*\([^,]*,\s*"([^"]+)"', s))
+        names |= set(re.findall(r'Cvar_RegisterVirtual\s*\([^,]*,\s*"([^"]+)"', s))
+    return names
+
+def statements(text):
+    """The console's own split, transcribed from Cbuf_ParseText (cmd.c): a statement ends
+    at a newline or at a ';' outside quotes and outside a comment; a quote preceded by a
+    backslash does not toggle; '//' opens a comment only outside quotes and at the start
+    of the line or after whitespace. Yields (line number, first token)."""
+    line, cur, quotes, comment, pos = 1, [], False, False, 0
+    def first(c):
+        t = ''.join(c).split()
+        return t[0] if t else None
+    while pos < len(text):
+        ch = text[pos]
+        if ch in ';\n\r' and not (ch == ';' and (comment or quotes)):
+            yield line, first(cur)
+            cur, quotes, comment = [], False, False
+            if ch == '\n':
+                line += 1
+            pos += 1
+            continue
+        if ch == '/' and not quotes and text[pos + 1:pos + 2] == '/' and (pos == 0 or text[pos - 1] in ' \t\n\r'):
+            comment = True
+        elif ch == '"' and not comment and (pos == 0 or text[pos - 1] != '\\'):
+            quotes = not quotes
+        if not comment:
+            cur.append(ch)
+        pos += 1
+    yield line, first(cur)
+
+def lint(ship, src):
+    errs, names = [], registered()
+    for n in ship:
+        p = os.path.join(src, n)
+        if not os.path.isfile(p):
+            continue
+        txt = io.open(p, encoding='utf-8', errors='replace').read()
+        aliases = set(re.findall(r'(?m)^\s*alias\s+(\S+)', txt))
+        for line, tok in statements(txt):
+            if tok is None:
+                continue
+            tok = tok.strip('"')
+            if tok in names or tok in aliases:
+                continue
+            errs.append('%s:%d runs "%s", which the engine does not register (an unquoted ";" '
+                        'in an echo, a typo, or a retired cvar)' % (n, line, tok))
+    return errs
+
 def check(target=None, docdir=None):
     """Failures as strings. target None = the tree (m5/, tracked); else a built packs/m5."""
     ship, notship, errs = load()
@@ -106,6 +171,7 @@ def check(target=None, docdir=None):
             if x in have:
                 errs.append('%s carries %s, which would shadow the one in id1' % (target, x))
     else:
+        errs += lint(ship, src)
         try:
             tracked = set(subprocess.run(['git', '-C', ROOT, 'ls-files', '-z', '--', 'm5'],
                           capture_output=True, check=True).stdout.decode().split('\0'))

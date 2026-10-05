@@ -191,6 +191,13 @@ if [ "$PUBLIC" = "1" ]; then
 	# and the recipe cfgs the guide refers to (not the showreels -- they play demos
 	# that are not shipped)
 	cp "$REPO/m5/progs.dat" "$REPO/m5/effectinfo.txt" "$REPO/m5/shaderwarm.txt" "$OUT/packs/m5/"
+	# the flamethrower's view model is OURS and GENERATED (qc/make_v_flamer.py,
+	# reading the palette from the build machine's own id1 pak), so it ships
+	# whether or not the AMI models are installed here
+	mkdir -p "$OUT/packs/m5/progs"
+	python3 "$REPO/qc/make_v_flamer.py" "$OUT/packs/m5/progs/v_flamer.mdl" || { echo "   !! could not build v_flamer.mdl"; exit 1; }
+	# and its ignition and wind-down sounds, likewise ours and generated
+	python3 "$REPO/qc/make_flamer_sounds.py" "$OUT/packs/m5/sound/m5" || { echo "   !! could not build the flamethrower sounds"; exit 1; }
 	# THE RECIPES ARE AN ALLOW-LIST (REVIEW 0.9): a recipe ships because release/recipes.txt
 	# names it, never because it was not excluded. Until 2026-09-24 a deny-list shipped
 	# 152 of them -- a stale best.cfg, probes that quit, one that exec'd files it did not
@@ -563,12 +570,15 @@ TXT
 	echo "== PUBLIC assertions"
 	# game data and third-party content are forbidden EXCEPT the two packs the
 	# block above ships knowingly: the QRP pk3, .mdl under m5/progs, b_*.bsp under
-	# m5/maps -- and never a remaster-derived model or Dissolution's plasma gun
+	# m5/maps, and the flamethrower's two sounds BY NAME (ours, synthesised by
+	# qc/make_flamer_sounds.py -- every other .wav stays forbidden) -- and never a
+	# remaster-derived model or Dissolution's plasma gun
 	BAD=$(find "$OUT/packs" -type f \( -iname '*.pak' -o -iname '*.pk3' -o -iname '*.mdl' \
 		-o -iname '*.bsp' -o -iname '*.dem' -o -iname '*.spr' -o -iname '*.wav' \
 		-o -iname '*.lmp' -o -iname '*.ogg' -o -iname '*.tga' -o -iname '*.lit' \) \
 		-not -path "$OUT/packs/m5/QRP_map_textures_v.1.00.pk3" \
-		-not -path "$OUT/packs/m5/progs/*.mdl" -not -path "$OUT/packs/m5/maps/b_*.bsp" )
+		-not -path "$OUT/packs/m5/progs/*.mdl" -not -path "$OUT/packs/m5/maps/b_*.bsp" \
+		-not -path "$OUT/packs/m5/sound/m5/flamer_ignite.wav" -not -path "$OUT/packs/m5/sound/m5/flamer_winddown.wav" )
 	for b in $AMI_EXCLUDE; do
 		[ -f "$OUT/packs/m5/progs/$b.mdl" ] && BAD="$BAD $OUT/packs/m5/progs/$b.mdl (remaster-derived or commercial)"
 	done

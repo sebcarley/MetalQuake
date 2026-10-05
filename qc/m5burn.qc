@@ -133,7 +133,7 @@ lands the embers appear with no further code.
 void() M5_BurnThink =
 {
 	local entity e, oself;
-	local float tier, dmg, frac, dur;
+	local float tier, dmg, frac, dur, pc;
 
 	if (m5_burncount <= 0)
 		return;
@@ -152,7 +152,12 @@ void() M5_BurnThink =
 	{
 		if (e.m5_burnuntil)
 		{
-			if ((tier <= 0 && !e.m5_burnforce) || e.health <= 0 || time > e.m5_burnuntil)
+			// WADING IN PUTS IT OUT (FLAMETHROWER.md, 2026-10-03): water or
+			// slime at the burning thing's centre, or a player waist-deep.
+			// Not lava -- lava is the last place a fire goes out.
+			pc = pointcontents (e.origin);
+			if ((tier <= 0 && !e.m5_burnforce) || e.health <= 0 || time > e.m5_burnuntil
+			    || pc == CONTENT_WATER || pc == CONTENT_SLIME || e.waterlevel >= 2)
 			{
 				M5_Douse (e);
 			}

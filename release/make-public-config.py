@@ -76,6 +76,7 @@ NOT_SHIPPED = (
         'm5_movement', 'm5_gore', 'm5_burn', 'm5_venom', 'm5_shotgun', 'm5_bullettime',
         'm5_horde', 'm5_balllightning', 'm5_kick', 'm5_grenadebounce', 'm5_nailtracer',
         'm5_nailbarrels', 'm5_axesparks', 'm5_explosion_sprite', 'm5_powerupglow',
+        'm5_flamer',                                      # the flamethrower, its stream and its sounds
         # m5_torch EXACTLY (the '$'): the handlamp's switch is gameplay, but its
         # _softness/_fogweight/_filament knobs are look and must surface if tuned
         'm5_noclipfly', 'm5_torch$', 'm5_muzzleflash', 'm5_shotgun_casing', 'm5_venom_trail',
